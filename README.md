@@ -11,7 +11,7 @@ Aplicação web para armazenamento, leitura estruturada e conversão inteligente
   - **Busca Instantânea (`Ctrl+K`)** em todo o conteúdo do livro ativo.
   - **Exportação**: Download do livro diagramado em **PDF (`.pdf`)** via `jsPDF` ou como **Aplicativo Offline em Arquivo Único HTML (`.html`)**, além de visualização e download do **PDF Original**.
 - **Acervo & Estante Digital Multi-Livros**:
-  - Armazenamento persistente em banco de dados **SQLite (`storage/library.sqlite`)** e diretório de arquivos PDF (`storage/pdfs/`).
+  - Armazenamento de capas (`covers/`) e arquivos PDF (`pdfs/`), além de sincronização de banco de dados SQLite (`db/library.sqlite`), integrado ao **Google Cloud Storage (`gs://livros-renovada-app-br`)** com cache e fallback local.
   - Pré-carregado com a tradução integral de *"A Igreja em Células"* (*The Cell Church* — Larry Stockstill, 1998).
 - **Upload e Conversão Automática de PDF**:
   - Área dedicada para envio de novos livros em `.pdf`.
@@ -35,3 +35,16 @@ Aplicação web para armazenamento, leitura estruturada e conversão inteligente
    npm run dev
    ```
    Acesse em `http://localhost:3000`.
+
+## Deploy no Google Cloud Run
+
+O projeto conta com `Dockerfile` multi-stage otimizado e integração nativa com o bucket `gs://livros-renovada-app-br` no projeto `renovada-app-br`:
+
+```bash
+gcloud run deploy livros-renovada-app-br \
+  --source . \
+  --project=renovada-app-br \
+  --region=us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=renovada-app-br,GCS_BUCKET=livros-renovada-app-br"
+```

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { extractText, getDocumentProxy, renderPageAsImage } from 'unpdf';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { BookInfo, BookSection, Chapter } from '../../data/bookTypes';
-import { COVER_STORAGE_DIR, ensureStorageDirectories } from '../db/database';
+import { ensureStorageDirectories } from '../db/database';
+import { getStorageService, IStorageService } from './storageService';
 
 export interface ExtractedPdfData {
   totalPages: number;
@@ -26,6 +27,12 @@ export interface ExtractedCoverResult {
 }
 
 export class PdfExtractorService {
+  private storageService: IStorageService;
+
+  constructor(storageService?: IStorageService) {
+    this.storageService = storageService || getStorageService();
+  }
+
   public async extractPdfPages(filePath: string): Promise<ExtractedPdfData> {
     const buffer = await fs.readFile(filePath);
     const uint8Array = new Uint8Array(buffer);
@@ -108,8 +115,7 @@ export class PdfExtractorService {
 
       const safeId = bookId.replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `${safeId}_cover.png`;
-      const outputPath = path.join(COVER_STORAGE_DIR, filename);
-      await fs.writeFile(outputPath, selectedCropBuffer);
+      await this.storageService.saveCover(filename, selectedCropBuffer);
 
       return {
         filename,

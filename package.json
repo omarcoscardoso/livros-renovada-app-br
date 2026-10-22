@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "tsx server.ts",
+    "dev": "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt tsx server.ts",
+    "start": "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@google-cloud/storage": "^8.4.0",
     "@google/genai": "^2.29.1",
     "@napi-rs/canvas": "^1.0.13",
     "@tailwindcss/vite": "^4.1.0",
