@@ -85,11 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <button
           onClick={onOpenLibrary}
-          className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0"
-          title="Abrir Estante de Livros da Biblioteca"
+          className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+          title="Voltar para a Estante Virtual de Livros"
         >
           <Library className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Biblioteca</span>
+          <span>Estante</span>
           <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-[10px] font-mono">
             {totalBooksCount}
           </span>

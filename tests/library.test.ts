@@ -165,4 +165,51 @@ describe('Biblioteca Digital & Conversor PDF', () => {
       if (fs.existsSync(tmpPdf)) fs.unlinkSync(tmpPdf);
     }
   });
+
+  it('deve salvar e recuperar capítulos marcados como lidos no localStorage do navegador por livro', async () => {
+    const store: Record<string, string> = {};
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => (key in store ? store[key] : null),
+      setItem: (key: string, val: string) => {
+        store[key] = String(val);
+      },
+      removeItem: (key: string) => {
+        delete store[key];
+      },
+      clear: () => {
+        Object.keys(store).forEach((k) => delete store[k]);
+      },
+    };
+
+    const {
+      toggleBookChapterRead,
+      getBookReadChapters,
+      loadAllReadChaptersMap,
+      saveBookLastVisitedChapter,
+      getBookLastVisitedChapter,
+    } = await import('../src/utils/readingProgressStorage');
+
+    // Marca capítulos em dois livros distintos
+    const listA1 = toggleBookChapterRead('cell-church-larry-stockstill', 'intro');
+    expect(listA1).toEqual(['intro']);
+
+    const listA2 = toggleBookChapterRead('cell-church-larry-stockstill', 'ch1');
+    expect(listA2).toEqual(['intro', 'ch1']);
+
+    const listB1 = toggleBookChapterRead('book-custom-2', 'cap-1');
+    expect(listB1).toEqual(['cap-1']);
+
+    // Verifica que trocar de livro preserva os capítulos lidos de ambos no navegador
+    expect(getBookReadChapters('cell-church-larry-stockstill')).toEqual(['intro', 'ch1']);
+    expect(getBookReadChapters('book-custom-2')).toEqual(['cap-1']);
+
+    // Desmarcar capítulo funciona e persiste
+    const listA3 = toggleBookChapterRead('cell-church-larry-stockstill', 'intro');
+    expect(listA3).toEqual(['ch1']);
+    expect(loadAllReadChaptersMap()['cell-church-larry-stockstill']).toEqual(['ch1']);
+
+    // Verifica último capítulo visitado
+    saveBookLastVisitedChapter('book-custom-2', 'cap-3');
+    expect(getBookLastVisitedChapter('book-custom-2')).toBe('cap-3');
+  });
 });

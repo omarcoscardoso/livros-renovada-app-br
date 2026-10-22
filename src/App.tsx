@@ -2,12 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { allChapters, bookInfo } from './data/bookData';
 import { BookSummary, Chapter, StoredBook } from './data/bookTypes';
 import { generateBookPdf } from './utils/pdfGenerator';
+import {
+  loadAllReadChaptersMap,
+  toggleBookChapterRead,
+  getBookLastVisitedChapter,
+  saveBookLastVisitedChapter,
+  ReadChaptersMap,
+} from './utils/readingProgressStorage';
 import { Navbar, ReaderTheme, FontSize } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { ChapterReader } from './components/ChapterReader';
 import { SearchModal } from './components/SearchModal';
 import { PdfViewerModal } from './components/PdfViewerModal';
-import { LibraryModal } from './components/LibraryModal';
+import { BookshelfView } from './components/BookshelfView';
 import { UploadBookModal } from './components/UploadBookModal';
 import { BookEditorModal } from './components/BookEditorModal';
 import { Loader2, Check } from 'lucide-react';
@@ -28,14 +35,80 @@ const FALLBACK_DEFAULT_BOOK: StoredBook = {
   updatedAt: new Date().toISOString(),
 };
 
+const FALLBACK_DEFAULT_SUMMARY: BookSummary = {
+  id: FALLBACK_DEFAULT_BOOK.id,
+  slug: FALLBACK_DEFAULT_BOOK.slug,
+  titlePt: FALLBACK_DEFAULT_BOOK.titlePt,
+  titleEn: FALLBACK_DEFAULT_BOOK.titleEn,
+  subtitlePt: FALLBACK_DEFAULT_BOOK.subtitlePt,
+  subtitleEn: FALLBACK_DEFAULT_BOOK.subtitleEn,
+  author: FALLBACK_DEFAULT_BOOK.author,
+  originalYear: FALLBACK_DEFAULT_BOOK.originalYear,
+  publisher: FALLBACK_DEFAULT_BOOK.publisher,
+  translatorNote: FALLBACK_DEFAULT_BOOK.translatorNote,
+  coverColor: 'amber',
+  chapterCount: allChapters.length,
+  totalEstimatedMinutes: 145,
+  hasOriginalPdf: true,
+  originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
+  status: 'ready',
+  createdAt: FALLBACK_DEFAULT_BOOK.createdAt,
+  updatedAt: FALLBACK_DEFAULT_BOOK.updatedAt,
+};
+
 export default function App() {
-  const [booksList, setBooksList] = useState<BookSummary[]>([]);
+  // Initial view is the virtual Bookshelf ("estante")
+  const [currentView, setCurrentView] = useState<'bookshelf' | 'reader'>('bookshelf');
+
+  const [booksList, setBooksList] = useState<BookSummary[]>([FALLBACK_DEFAULT_SUMMARY]);
   const [activeBook, setActiveBook] = useState<StoredBook>(FALLBACK_DEFAULT_BOOK);
   const [hasGeminiKey, setHasGeminiKey] = useState<boolean>(false);
 
   const [currentChapterId, setCurrentChapterId] = useState<string>('intro');
-  const [theme, setTheme] = useState<ReaderTheme>('sepia');
-  const [fontSize, setFontSize] = useState<FontSize>('base');
+
+  // Persist theme & font size in browser localStorage
+  const [theme, setTheme] = useState<ReaderTheme>(() => {
+    try {
+      const saved = localStorage.getItem('ipr_reader_theme') as ReaderTheme | null;
+      return saved === 'dark' || saved === 'sepia' || saved === 'light' ? saved : 'sepia';
+    } catch {
+      return 'sepia';
+    }
+  });
+
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    try {
+      const saved = localStorage.getItem('ipr_reader_font_size') as FontSize | null;
+      return saved === 'sm' || saved === 'base' || saved === 'lg' || saved === 'xl'
+        ? saved
+        : 'base';
+    } catch {
+      return 'base';
+    }
+  });
+
+  const handleChangeTheme = (newTheme: ReaderTheme) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem('ipr_reader_theme', newTheme);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleChangeFontSize = (newSize: FontSize) => {
+    setFontSize(newSize);
+    try {
+      localStorage.setItem('ipr_reader_font_size', newSize);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Persistent map of read chapters per book in localStorage
+  const [readChaptersMap, setReadChaptersMap] = useState<ReadChaptersMap>(() =>
+    loadAllReadChaptersMap()
+  );
 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
@@ -43,53 +116,32 @@ export default function App() {
   const [pdfTargetBook, setPdfTargetBook] = useState<StoredBook | BookSummary>(
     FALLBACK_DEFAULT_BOOK
   );
-  const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [editingBook, setEditingBook] = useState<StoredBook | null>(null);
 
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
 
-  const getStorageKey = (bookId: string) =>
-    bookId === DEFAULT_BOOK_ID
-      ? 'cell_church_read_chapters'
-      : `library_read_chapters_${bookId}`;
+  const readChaptersForActiveBook = readChaptersMap[activeBook.id] || [];
 
-  const [readChapters, setReadChapters] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('cell_church_read_chapters');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const handleToggleReadChapter = (chapterId: string) => {
+    const updatedList = toggleBookChapterRead(activeBook.id, chapterId);
+    setReadChaptersMap((prev) => ({
+      ...prev,
+      [activeBook.id]: updatedList,
+    }));
+  };
 
-  // Load readChapters when activeBook changes
-  useEffect(() => {
-    try {
-      const key = getStorageKey(activeBook.id);
-      const saved = localStorage.getItem(key);
-      setReadChapters(saved ? JSON.parse(saved) : []);
-    } catch {
-      setReadChapters([]);
-    }
-  }, [activeBook.id]);
-
-  // Save read chapters to localStorage
-  useEffect(() => {
-    try {
-      const key = getStorageKey(activeBook.id);
-      localStorage.setItem(key, JSON.stringify(readChapters));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [readChapters, activeBook.id]);
+  const handleSelectChapter = (chapterId: string) => {
+    setCurrentChapterId(chapterId);
+    saveBookLastVisitedChapter(activeBook.id, chapterId);
+  };
 
   const fetchLibrary = useCallback(async () => {
     try {
       const res = await fetch('/api/books');
       if (!res.ok) return;
       const data = await res.json();
-      if (Array.isArray(data.books)) {
+      if (Array.isArray(data.books) && data.books.length > 0) {
         setBooksList(data.books);
       }
       if (typeof data.hasGeminiKey === 'boolean') {
@@ -119,15 +171,34 @@ export default function App() {
   const handleSelectBook = async (bookId: string) => {
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.book) {
-        setActiveBook(data.book);
-        const firstChId = data.book.chapters?.[0]?.id || 'intro';
-        setCurrentChapterId(firstChId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.book) {
+          setActiveBook(data.book);
+          const chapters: Chapter[] = data.book.chapters || [];
+          const savedChapterId = getBookLastVisitedChapter(data.book.id);
+          const targetChapterId =
+            savedChapterId && chapters.some((c) => c.id === savedChapterId)
+              ? savedChapterId
+              : chapters[0]?.id || 'intro';
+          setCurrentChapterId(targetChapterId);
+          setCurrentView('reader');
+          return;
+        }
+      }
+
+      if (bookId === DEFAULT_BOOK_ID) {
+        setActiveBook(FALLBACK_DEFAULT_BOOK);
+        const savedChapterId = getBookLastVisitedChapter(DEFAULT_BOOK_ID);
+        setCurrentChapterId(savedChapterId || 'intro');
+        setCurrentView('reader');
       }
     } catch (err) {
       console.error('Erro ao abrir livro:', err);
+      if (bookId === DEFAULT_BOOK_ID) {
+        setActiveBook(FALLBACK_DEFAULT_BOOK);
+        setCurrentView('reader');
+      }
     }
   };
 
@@ -145,7 +216,7 @@ export default function App() {
   };
 
   const handleDeleteBook = async (bookId: string) => {
-    if (!window.confirm('Tem certeza que deseja remover este livro da biblioteca?')) return;
+    if (!window.confirm('Tem certeza que deseja remover este livro da estante?')) return;
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`, {
         method: 'DELETE',
@@ -157,7 +228,8 @@ export default function App() {
       }
       await fetchLibrary();
       if (activeBook.id === bookId) {
-        handleSelectBook(DEFAULT_BOOK_ID);
+        setActiveBook(FALLBACK_DEFAULT_BOOK);
+        setCurrentView('bookshelf');
       }
     } catch (err) {
       console.error('Erro ao excluir livro:', err);
@@ -191,38 +263,34 @@ export default function App() {
   const currentChapter: Chapter =
     activeChapters[currentChapterIndex] || activeChapters[0];
 
-  // Global Keyboard shortcuts (Ctrl+K or Cmd+K)
+  // Global Keyboard shortcuts (Ctrl+K or Cmd+K in reader view)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && currentView === 'reader') {
         e.preventDefault();
         setIsSearchOpen(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [currentView]);
 
-  // Scroll to top on chapter or book change
+  // Scroll to top on chapter, book, or view change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentChapterId, activeBook.id]);
-
-  const toggleReadStatus = (id: string) => {
-    setReadChapters((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
+  }, [currentChapterId, activeBook.id, currentView]);
 
   const handleNextChapter = () => {
     if (currentChapterIndex < activeChapters.length - 1) {
-      setCurrentChapterId(activeChapters[currentChapterIndex + 1].id);
+      const nextId = activeChapters[currentChapterIndex + 1].id;
+      handleSelectChapter(nextId);
     }
   };
 
   const handlePrevChapter = () => {
     if (currentChapterIndex > 0) {
-      setCurrentChapterId(activeChapters[currentChapterIndex - 1].id);
+      const prevId = activeChapters[currentChapterIndex - 1].id;
+      handleSelectChapter(prevId);
     }
   };
 
@@ -259,108 +327,130 @@ export default function App() {
         </div>
       )}
 
-      {/* Table of Contents & Library Drawer */}
-      <Sidebar
-        book={activeBook}
-        chapters={activeChapters}
-        currentChapterId={currentChapter.id}
-        onSelectChapter={(id) => setCurrentChapterId(id)}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onOpenPdf={() => {
-          setPdfTargetBook(activeBook);
-          setIsPdfOpen(true);
-        }}
-        onOpenLibrary={() => setIsLibraryOpen(true)}
-        onOpenUpload={() => setIsUploadOpen(true)}
-        onOpenEditor={() => setEditingBook(activeBook)}
-        readChapters={readChapters}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        totalBooksCount={Math.max(1, booksList.length)}
-      />
-
-      {/* Main E-Book Reader Area */}
-      <div className="flex-1 lg:pl-72 flex flex-col min-h-screen">
-        <Navbar
-          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-          onOpenSearch={() => setIsSearchOpen(true)}
-          onOpenPdf={() => {
-            setPdfTargetBook(activeBook);
+      {currentView === 'bookshelf' ? (
+        <BookshelfView
+          books={booksList}
+          readChaptersMap={readChaptersMap}
+          theme={theme}
+          onChangeTheme={handleChangeTheme}
+          onSelectBook={handleSelectBook}
+          onOpenUpload={() => setIsUploadOpen(true)}
+          onOpenPdfForBook={(bookId) => {
+            const found = booksList.find((b) => b.id === bookId) || activeBook;
+            setPdfTargetBook(found);
             setIsPdfOpen(true);
           }}
-          onPrintPdf={handleDownloadPdf}
-          onOpenLibrary={() => setIsLibraryOpen(true)}
-          onOpenUpload={() => setIsUploadOpen(true)}
-          theme={theme}
-          onChangeTheme={setTheme}
-          fontSize={fontSize}
-          onChangeFontSize={setFontSize}
-          bookTitle={activeBook.titlePt}
-          chapterTitle={currentChapter.titlePt}
-          totalBooksCount={Math.max(1, booksList.length)}
-          hasOriginalPdf={activeBook.hasOriginalPdf}
+          onEditBook={(bookId) => handleOpenEditBook(bookId)}
+          onDeleteBook={handleDeleteBook}
+          onReprocessBook={handleReprocessBook}
         />
-
-        <main className="flex-1">
-          <ChapterReader
-            chapter={currentChapter}
-            totalChapters={activeChapters.length}
-            bookTitle={activeBook.titlePt}
-            bookAuthor={activeBook.author}
-            theme={theme}
-            fontSize={fontSize}
-            isRead={readChapters.includes(currentChapter.id)}
-            onToggleRead={() => toggleReadStatus(currentChapter.id)}
-            onPrevChapter={handlePrevChapter}
-            onNextChapter={handleNextChapter}
-            hasPrev={currentChapterIndex > 0}
-            hasNext={currentChapterIndex < activeChapters.length - 1}
+      ) : (
+        <>
+          {/* Table of Contents & Library Drawer */}
+          <Sidebar
+            book={activeBook}
+            chapters={activeChapters}
+            currentChapterId={currentChapter.id}
+            onSelectChapter={handleSelectChapter}
+            onToggleChapterRead={handleToggleReadChapter}
+            onOpenSearch={() => setIsSearchOpen(true)}
+            onOpenPdf={() => {
+              setPdfTargetBook(activeBook);
+              setIsPdfOpen(true);
+            }}
+            onOpenLibrary={() => setCurrentView('bookshelf')}
+            onOpenUpload={() => setIsUploadOpen(true)}
+            onOpenEditor={() => setEditingBook(activeBook)}
+            readChapters={readChaptersForActiveBook}
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            totalBooksCount={Math.max(1, booksList.length)}
           />
-        </main>
-      </div>
 
-      {/* Clean printable book view for window.print() (PDF generation) */}
-      <div className="print-only p-8 text-black bg-white">
-        <div className="text-center py-12 border-b-2 border-black">
-          <h1 className="text-3xl font-bold font-serif mb-2">{activeBook.titlePt}</h1>
-          <h3 className="text-lg text-gray-700 font-serif">{activeBook.subtitlePt}</h3>
-          <p className="mt-4 text-sm font-semibold">
-            Autor: {activeBook.author} ({activeBook.originalYear})
-          </p>
-          <p className="text-xs text-gray-500 italic mt-2">{activeBook.translatorNote}</p>
-        </div>
+          {/* Main E-Book Reader Area */}
+          <div className="flex-1 lg:pl-72 flex flex-col min-h-screen">
+            <Navbar
+              onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+              onOpenSearch={() => setIsSearchOpen(true)}
+              onOpenPdf={() => {
+                setPdfTargetBook(activeBook);
+                setIsPdfOpen(true);
+              }}
+              onPrintPdf={handleDownloadPdf}
+              onOpenLibrary={() => setCurrentView('bookshelf')}
+              onOpenUpload={() => setIsUploadOpen(true)}
+              theme={theme}
+              onChangeTheme={handleChangeTheme}
+              fontSize={fontSize}
+              onChangeFontSize={handleChangeFontSize}
+              bookTitle={activeBook.titlePt}
+              chapterTitle={currentChapter.titlePt}
+              totalBooksCount={Math.max(1, booksList.length)}
+              hasOriginalPdf={activeBook.hasOriginalPdf}
+            />
 
-        {activeChapters.map((ch) => (
-          <div key={ch.id} className="page-break my-10">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2 mb-3">
-              {ch.titlePt}
-            </h2>
-            {ch.subtitlePt && (
-              <p className="text-sm italic text-gray-600 mb-4">{ch.subtitlePt}</p>
-            )}
-            <div className="bg-gray-100 p-4 border-l-4 border-gray-600 mb-6 text-sm">
-              <strong>Resumo:</strong> {ch.summaryPt}
+            <main className="flex-1">
+              <ChapterReader
+                chapter={currentChapter}
+                totalChapters={activeChapters.length}
+                bookTitle={activeBook.titlePt}
+                bookAuthor={activeBook.author}
+                theme={theme}
+                fontSize={fontSize}
+                isRead={readChaptersForActiveBook.includes(currentChapter.id)}
+                onToggleRead={() => handleToggleReadChapter(currentChapter.id)}
+                onPrevChapter={handlePrevChapter}
+                onNextChapter={handleNextChapter}
+                hasPrev={currentChapterIndex > 0}
+                hasNext={currentChapterIndex < activeChapters.length - 1}
+              />
+            </main>
+          </div>
+
+          {/* Clean printable book view for window.print() (PDF generation) */}
+          <div className="print-only p-8 text-black bg-white">
+            <div className="text-center py-12 border-b-2 border-black">
+              <h1 className="text-3xl font-bold font-serif mb-2">{activeBook.titlePt}</h1>
+              <h3 className="text-lg text-gray-700 font-serif">{activeBook.subtitlePt}</h3>
+              <p className="mt-4 text-sm font-semibold">
+                Autor: {activeBook.author} ({activeBook.originalYear})
+              </p>
+              <p className="text-xs text-gray-500 italic mt-2">{activeBook.translatorNote}</p>
             </div>
 
-            {ch.sections.map((sec) => (
-              <div key={sec.id} className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">{sec.titlePt}</h3>
-                {sec.paragraphsPt.map((p, pIdx) => (
-                  <p key={pIdx} className="text-sm leading-relaxed mb-3 text-justify">
-                    {p}
-                  </p>
+            {activeChapters.map((ch) => (
+              <div key={ch.id} className="page-break my-10">
+                <h2 className="text-2xl font-bold text-gray-900 border-b pb-2 mb-3">
+                  {ch.titlePt}
+                </h2>
+                {ch.subtitlePt && (
+                  <p className="text-sm italic text-gray-600 mb-4">{ch.subtitlePt}</p>
+                )}
+                <div className="bg-gray-100 p-4 border-l-4 border-gray-600 mb-6 text-sm">
+                  <strong>Resumo:</strong> {ch.summaryPt}
+                </div>
+
+                {ch.sections.map((sec) => (
+                  <div key={sec.id} className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3">{sec.titlePt}</h3>
+                    {sec.paragraphsPt.map((p, pIdx) => (
+                      <p key={pIdx} className="text-sm leading-relaxed mb-3 text-justify">
+                        {p}
+                      </p>
+                    ))}
+                  </div>
                 ))}
               </div>
             ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {/* Search Modal */}
       <SearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onSelectResult={(chapterId) => setCurrentChapterId(chapterId)}
+        onSelectResult={(chapterId) => handleSelectChapter(chapterId)}
         chapters={activeChapters}
         bookTitle={activeBook.titlePt}
       />
@@ -376,49 +466,6 @@ export default function App() {
         originalPdfName={pdfTargetBook.originalPdfName}
       />
 
-      {/* Library Bookshelf Modal */}
-      <LibraryModal
-        isOpen={isLibraryOpen}
-        onClose={() => setIsLibraryOpen(false)}
-        books={booksList.length > 0 ? booksList : [
-          {
-            id: FALLBACK_DEFAULT_BOOK.id,
-            slug: FALLBACK_DEFAULT_BOOK.slug,
-            titlePt: FALLBACK_DEFAULT_BOOK.titlePt,
-            titleEn: FALLBACK_DEFAULT_BOOK.titleEn,
-            subtitlePt: FALLBACK_DEFAULT_BOOK.subtitlePt,
-            subtitleEn: FALLBACK_DEFAULT_BOOK.subtitleEn,
-            author: FALLBACK_DEFAULT_BOOK.author,
-            originalYear: FALLBACK_DEFAULT_BOOK.originalYear,
-            publisher: FALLBACK_DEFAULT_BOOK.publisher,
-            translatorNote: FALLBACK_DEFAULT_BOOK.translatorNote,
-            coverColor: 'amber',
-            chapterCount: allChapters.length,
-            totalEstimatedMinutes: 145,
-            hasOriginalPdf: true,
-            originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
-            status: 'ready',
-            createdAt: FALLBACK_DEFAULT_BOOK.createdAt,
-            updatedAt: FALLBACK_DEFAULT_BOOK.updatedAt,
-          },
-        ]}
-        activeBookId={activeBook.id}
-        onSelectBook={handleSelectBook}
-        onOpenUpload={() => setIsUploadOpen(true)}
-        onOpenPdfForBook={(bookId) => {
-          const found = booksList.find((b) => b.id === bookId) || activeBook;
-          setPdfTargetBook(found);
-          setIsLibraryOpen(false);
-          setIsPdfOpen(true);
-        }}
-        onEditBook={(bookId) => {
-          setIsLibraryOpen(false);
-          handleOpenEditBook(bookId);
-        }}
-        onDeleteBook={handleDeleteBook}
-        onReprocessBook={handleReprocessBook}
-      />
-
       {/* PDF Upload & Conversion Modal */}
       <UploadBookModal
         isOpen={isUploadOpen}
@@ -426,7 +473,10 @@ export default function App() {
         hasGeminiKey={hasGeminiKey}
         onBookReady={(newBook) => {
           setActiveBook(newBook);
-          setCurrentChapterId(newBook.chapters?.[0]?.id || 'intro');
+          const firstCh = newBook.chapters?.[0]?.id || 'intro';
+          setCurrentChapterId(firstCh);
+          saveBookLastVisitedChapter(newBook.id, firstCh);
+          setCurrentView('reader');
           fetchLibrary();
         }}
         onRefreshLibrary={fetchLibrary}
