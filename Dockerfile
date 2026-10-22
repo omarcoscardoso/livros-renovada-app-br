@@ -35,8 +35,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/src ./src
 
-RUN mkdir -p /app/storage/pdfs /app/storage/covers \
-    && chown -R node:node /app
+RUN chown -R node:node /app
 
 USER node
 

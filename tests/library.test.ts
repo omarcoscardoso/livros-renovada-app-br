@@ -8,7 +8,10 @@ import {
   SqliteBookRepository,
 } from '../src/server/repositories/bookRepository';
 import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
-import { CloudStorageService, DEFAULT_GCS_BUCKET } from '../src/server/services/storageService';
+import {
+  InMemoryStorageService,
+  DEFAULT_GCS_BUCKET,
+} from '../src/server/services/storageService';
 import { searchBook, generateStandaloneBookHtml } from '../src/data/bookData';
 
 describe('Biblioteca Digital & Conversor PDF', () => {
@@ -147,24 +150,17 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(html).toContain('A Visão Celular Contemporânea');
   });
 
-  it('deve extrair texto real de um arquivo PDF válido usando PdfExtractorService', async () => {
+  it('deve extrair texto real de um buffer PDF válido usando PdfExtractorService em memória', async () => {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     doc.text('Capítulo 1: Fundamentos da Igreja', 20, 30);
     doc.text('A igreja em células cresce por meio da comunhão e do discipulado.', 20, 45);
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
-    const tmpPdf = path.join(os.tmpdir(), `sample_${Date.now()}.pdf`);
-    fs.writeFileSync(tmpPdf, pdfBuffer);
-
-    try {
-      const extractor = new PdfExtractorService();
-      const extracted = await extractor.extractPdfPages(tmpPdf);
-      expect(extracted.totalPages).toBe(1);
-      expect(extracted.fullText).toContain('Fundamentos');
-    } finally {
-      if (fs.existsSync(tmpPdf)) fs.unlinkSync(tmpPdf);
-    }
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+    const extracted = await extractor.extractPdfPages(pdfBuffer);
+    expect(extracted.totalPages).toBe(1);
+    expect(extracted.fullText).toContain('Fundamentos');
   });
 
   it('deve salvar e recuperar capítulos marcados como lidos no localStorage do navegador por livro', async () => {
@@ -214,10 +210,9 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(getBookLastVisitedChapter('book-custom-2')).toBe('cap-3');
   });
 
-  it('deve descobrir e extrair a imagem da capa a partir do PDF e expor coverImageUrl no repositório', async () => {
+  it('deve descobrir e extrair a imagem da capa a partir de um Buffer PDF em memória sem tocar o disco', async () => {
     const books = repo.listBooks();
     expect(books[0].coverImageUrl).toBe(`/api/books/${DEFAULT_BOOK_ID}/cover`);
-    expect(repo.getCoverImagePath(DEFAULT_BOOK_ID)).not.toBeNull();
 
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
@@ -228,22 +223,20 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     doc.text('CAPA DO LIVRO DE TESTE', 45, 120);
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
-    const tmpPdf = path.join(os.tmpdir(), `cover_test_${Date.now()}.pdf`);
-    fs.writeFileSync(tmpPdf, pdfBuffer);
+    const memoryStorage = new InMemoryStorageService();
+    const extractor = new PdfExtractorService(memoryStorage);
+    const coverRes = await extractor.extractBookCoverImage(pdfBuffer, 'test_cover_book', 1);
+    expect(coverRes).not.toBeNull();
+    expect(coverRes?.pageNumber).toBe(1);
+    expect(coverRes?.filename).toBe('test_cover_book_cover.png');
 
-    try {
-      const extractor = new PdfExtractorService();
-      const coverRes = await extractor.extractBookCoverImage(tmpPdf, 'test_cover_book', 1);
-      expect(coverRes).not.toBeNull();
-      expect(coverRes?.pageNumber).toBe(1);
-      expect(coverRes?.filename).toBe('test_cover_book_cover.png');
-    } finally {
-      if (fs.existsSync(tmpPdf)) fs.unlinkSync(tmpPdf);
-    }
+    const savedBuffer = await memoryStorage.getCoverBuffer('test_cover_book_cover.png');
+    expect(savedBuffer).not.toBeNull();
+    expect(savedBuffer!.length).toBeGreaterThan(100);
   });
 
-  it('deve configurar o CloudStorageService com o bucket livros-renovada-app-br e expor metadados de capa e PDF', async () => {
-    const storage = new CloudStorageService({ gcsEnabled: false });
+  it('deve configurar o InMemoryStorageService com o bucket padrão e expor metadados de capa e PDF', async () => {
+    const storage = new InMemoryStorageService();
     expect(storage.getBucketName()).toBe(DEFAULT_GCS_BUCKET);
     expect(repo.getCoverFilename(DEFAULT_BOOK_ID)).toBe(`${DEFAULT_BOOK_ID}_cover.png`);
     expect(repo.getPdfMetadata(DEFAULT_BOOK_ID)?.filename).toBe(

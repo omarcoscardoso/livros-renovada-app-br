@@ -162,13 +162,20 @@ export class GeminiConversionService {
     return new GoogleGenAI({ apiKey: key });
   }
 
+  private async toBuffer(input: string | Buffer | Uint8Array): Promise<Buffer> {
+    if (Buffer.isBuffer(input)) return input;
+    if (input instanceof Uint8Array) return Buffer.from(input);
+    return fs.readFile(input);
+  }
+
   /**
    * Processes an uploaded PDF into the full BookInfo + Chapter[] reading format.
+   * Accepts either a file path or a Buffer/Uint8Array.
    * Updates progress in SQLite at each step.
    */
   public async processUploadedBook(
     bookId: string,
-    pdfFilePath: string,
+    pdfInput: string | Buffer | Uint8Array,
     originalFilename: string,
     hints: BookMetadataHints = {},
     customInstructions?: string,
@@ -183,7 +190,7 @@ export class GeminiConversionService {
       );
 
       // Extract cover image right away (defaults to first non-blank page among 1..3)
-      const initialCover = await this.extractor.extractBookCoverImage(pdfFilePath, bookId);
+      const initialCover = await this.extractor.extractBookCoverImage(pdfInput, bookId);
       if (initialCover) {
         this.repo.updateBookContent(bookId, {
           coverImageFilename: initialCover.filename,
@@ -194,7 +201,7 @@ export class GeminiConversionService {
         });
       }
 
-      const extracted = await this.extractor.extractPdfPages(pdfFilePath);
+      const extracted = await this.extractor.extractPdfPages(pdfInput);
       const localBaseline = this.extractor.buildStructuredBookFromPages(
         extracted,
         originalFilename,
@@ -235,7 +242,7 @@ export class GeminiConversionService {
       const { book: aiBook, aiCoverPage } = await this.convertWithGemini(
         client,
         bookId,
-        pdfFilePath,
+        pdfInput,
         extracted,
         localBaseline,
         hints,
@@ -249,7 +256,7 @@ export class GeminiConversionService {
         (!initialCover || aiCoverPage !== initialCover.pageNumber)
       ) {
         const refinedCover = await this.extractor.extractBookCoverImage(
-          pdfFilePath,
+          pdfInput,
           bookId,
           aiCoverPage
         );
@@ -271,7 +278,7 @@ export class GeminiConversionService {
       console.error(`Erro na conversão do livro ${bookId}:`, error);
       // Attempt graceful fallback to local extraction if possible so user still gets a readable book
       try {
-        const extracted = await this.extractor.extractPdfPages(pdfFilePath);
+        const extracted = await this.extractor.extractPdfPages(pdfInput);
         const fallbackBook = this.extractor.buildStructuredBookFromPages(
           extracted,
           originalFilename,
@@ -299,19 +306,19 @@ export class GeminiConversionService {
   private async convertWithGemini(
     client: GoogleGenAI,
     bookId: string,
-    pdfFilePath: string,
+    pdfInput: string | Buffer | Uint8Array,
     extracted: ExtractedPdfData,
     localBaseline: BookInfo,
     hints: BookMetadataHints,
     customInstructions?: string
   ): Promise<{ book: BookInfo; aiCoverPage?: number }> {
-    const stat = await fs.stat(pdfFilePath);
-    const isSmallEnoughForInlinePdf = stat.size <= 15 * 1024 * 1024; // <= 15MB
+    const pdfBuffer = await this.toBuffer(pdfInput);
+    const isSmallEnoughForInlinePdf = pdfBuffer.length <= 15 * 1024 * 1024; // <= 15MB
     const hasSelectableText = extracted.fullText.trim().length > 300;
 
     let pdfBase64: string | null = null;
     if (isSmallEnoughForInlinePdf && (!hasSelectableText || extracted.totalPages <= 80)) {
-      pdfBase64 = await fs.readFile(pdfFilePath, { encoding: 'base64' });
+      pdfBase64 = pdfBuffer.toString('base64');
     }
 
     // Sample text from beginning/middle/end of book for outline extraction

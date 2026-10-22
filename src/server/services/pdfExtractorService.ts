@@ -1,10 +1,7 @@
 import fs from 'node:fs/promises';
-import fsSync from 'node:fs';
-import path from 'node:path';
 import { extractText, getDocumentProxy, renderPageAsImage } from 'unpdf';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { BookInfo, BookSection, Chapter } from '../../data/bookTypes';
-import { ensureStorageDirectories } from '../db/database';
 import { getStorageService, IStorageService } from './storageService';
 
 export interface ExtractedPdfData {
@@ -33,8 +30,14 @@ export class PdfExtractorService {
     this.storageService = storageService || getStorageService();
   }
 
-  public async extractPdfPages(filePath: string): Promise<ExtractedPdfData> {
-    const buffer = await fs.readFile(filePath);
+  private async toBuffer(input: string | Buffer | Uint8Array): Promise<Buffer> {
+    if (Buffer.isBuffer(input)) return input;
+    if (input instanceof Uint8Array) return Buffer.from(input);
+    return fs.readFile(input);
+  }
+
+  public async extractPdfPages(pdfInput: string | Buffer | Uint8Array): Promise<ExtractedPdfData> {
+    const buffer = await this.toBuffer(pdfInput);
     const uint8Array = new Uint8Array(buffer);
 
     const pdf = await getDocumentProxy(uint8Array);
@@ -54,20 +57,18 @@ export class PdfExtractorService {
   /**
    * Discovers the cover page of the PDF (typically page 1, or page 2/3 if page 1 is blank,
    * or the page number identified by Gemini AI), renders it as a high-res PNG, crops excess
-   * white scanner margins if needed, and saves it to COVER_STORAGE_DIR.
+   * white scanner margins if needed, and saves it via IStorageService.
    */
   public async extractBookCoverImage(
-    pdfFilePath: string,
+    pdfInput: string | Buffer | Uint8Array,
     bookId: string,
     preferredPageNumber?: number
   ): Promise<ExtractedCoverResult | null> {
     try {
-      ensureStorageDirectories();
-      if (!fsSync.existsSync(pdfFilePath)) {
+      const rawBuffer = await this.toBuffer(pdfInput);
+      if (!rawBuffer || rawBuffer.length === 0) {
         return null;
       }
-
-      const rawBuffer = await fs.readFile(pdfFilePath);
       const pdfDoc = await getDocumentProxy(new Uint8Array(rawBuffer));
       const totalPages = pdfDoc.numPages || 1;
 
