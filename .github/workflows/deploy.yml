@@ -62,4 +62,5 @@ jobs:
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
       - name: Exibir URL do Cloud Run
-        run: echo "Service URL: ${{ steps.deploy.outputs.url }}"
+        run: |
+          echo "Service URL - ${{ steps.deploy.outputs.url }}"
