@@ -212,4 +212,32 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     saveBookLastVisitedChapter('book-custom-2', 'cap-3');
     expect(getBookLastVisitedChapter('book-custom-2')).toBe('cap-3');
   });
+
+  it('deve descobrir e extrair a imagem da capa a partir do PDF e expor coverImageUrl no repositório', async () => {
+    const books = repo.listBooks();
+    expect(books[0].coverImageUrl).toBe(`/api/books/${DEFAULT_BOOK_ID}/cover`);
+    expect(repo.getCoverImagePath(DEFAULT_BOOK_ID)).not.toBeNull();
+
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    doc.setFillColor(180, 83, 9);
+    doc.rect(20, 20, 170, 250, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text('CAPA DO LIVRO DE TESTE', 45, 120);
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+    const tmpPdf = path.join(os.tmpdir(), `cover_test_${Date.now()}.pdf`);
+    fs.writeFileSync(tmpPdf, pdfBuffer);
+
+    try {
+      const extractor = new PdfExtractorService();
+      const coverRes = await extractor.extractBookCoverImage(tmpPdf, 'test_cover_book', 1);
+      expect(coverRes).not.toBeNull();
+      expect(coverRes?.pageNumber).toBe(1);
+      expect(coverRes?.filename).toBe('test_cover_book_cover.png');
+    } finally {
+      if (fs.existsSync(tmpPdf)) fs.unlinkSync(tmpPdf);
+    }
+  });
 });

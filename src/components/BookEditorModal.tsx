@@ -31,6 +31,8 @@ export const BookEditorModal: React.FC<BookEditorModalProps> = ({
   const [translatorNote, setTranslatorNote] = useState('');
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChIdx, setSelectedChIdx] = useState(0);
+  const [coverPageNum, setCoverPageNum] = useState(1);
+  const [isUpdatingCover, setIsUpdatingCover] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
 
@@ -42,6 +44,7 @@ export const BookEditorModal: React.FC<BookEditorModalProps> = ({
       setOriginalYear(book.originalYear);
       setPublisher(book.publisher);
       setTranslatorNote(book.translatorNote);
+      setCoverPageNum(book.coverPageNumber || 1);
       setChapters(JSON.parse(JSON.stringify(book.chapters || [])));
       setSelectedChIdx(0);
       setSavedFeedback(false);
@@ -173,8 +176,8 @@ export const BookEditorModal: React.FC<BookEditorModalProps> = ({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Book Metadata */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-800/40 border border-slate-800">
+          {/* Book Metadata & Cover Page Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-slate-800/40 border border-slate-800">
             <div>
               <label className="block text-[11px] font-semibold text-slate-400 mb-1">
                 Título (PT-BR)
@@ -221,6 +224,51 @@ export const BookEditorModal: React.FC<BookEditorModalProps> = ({
                   onChange={(e) => setOriginalYear(Number(e.target.value))}
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs outline-none focus:border-amber-500"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                Página da Capa no PDF
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={coverPageNum}
+                  onChange={(e) => setCoverPageNum(Math.max(1, Number(e.target.value)))}
+                  className="w-20 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  disabled={isUpdatingCover}
+                  onClick={async () => {
+                    setIsUpdatingCover(true);
+                    try {
+                      const res = await fetch(
+                        `/api/books/${encodeURIComponent(book.id)}/cover-page`,
+                        {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ pageNumber: coverPageNum }),
+                        }
+                      );
+                      const data = await res.json();
+                      if (res.ok && data.book) {
+                        onSaved(data.book);
+                      } else {
+                        alert(data.error || 'Erro ao atualizar capa.');
+                      }
+                    } catch {
+                      alert('Erro ao atualizar página da capa.');
+                    } finally {
+                      setIsUpdatingCover(false);
+                    }
+                  }}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-amber-300 text-xs font-semibold transition-colors"
+                >
+                  {isUpdatingCover ? 'Gerando...' : 'Extrair Capa'}
+                </button>
               </div>
             </div>
           </div>

@@ -230,23 +230,41 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
                 <div>
                   {/* Book Cover + Header Info */}
                   <div className="flex items-start gap-4">
-                    {/* 3D Stylized Book Cover */}
+                    {/* 3D Stylized Book Cover with Real Extracted Cover Image */}
                     <button
                       onClick={() => !isProcessing && onSelectBook(book.id)}
                       disabled={isProcessing}
-                      className={`w-24 h-36 rounded-xl bg-gradient-to-br border flex flex-col justify-between p-3 text-left shrink-0 shadow-xl transition-transform hover:scale-[1.03] cursor-pointer ${coverGradient}`}
+                      className={`relative w-24 h-36 rounded-xl bg-gradient-to-br border overflow-hidden flex flex-col justify-between text-left shrink-0 shadow-xl transition-transform hover:scale-[1.03] cursor-pointer group ${coverGradient}`}
                       title={`Abrir "${book.titlePt}"`}
                     >
-                      <div className="flex items-center justify-between w-full opacity-80">
-                        <BookOpen className="w-4 h-4" />
-                        <span className="text-[9px] font-mono">{book.originalYear}</span>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-bold font-display leading-tight line-clamp-3">
-                          {book.titlePt}
-                        </p>
-                        <p className="text-[9px] opacity-80 truncate">{book.author}</p>
-                      </div>
+                      {book.coverImageUrl ? (
+                        <>
+                          <img
+                            src={book.coverImageUrl}
+                            alt={`Capa de ${book.titlePt}`}
+                            className="w-full h-full object-cover bg-white"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                          {/* Book spine 3D highlight overlay */}
+                          <div className="pointer-events-none absolute inset-y-0 left-0 w-2.5 bg-gradient-to-r from-black/35 via-white/20 to-transparent" />
+                        </>
+                      ) : (
+                        <div className="p-3 flex flex-col justify-between h-full w-full">
+                          <div className="flex items-center justify-between w-full opacity-80">
+                            <BookOpen className="w-4 h-4" />
+                            <span className="text-[9px] font-mono">{book.originalYear}</span>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-bold font-display leading-tight line-clamp-3">
+                              {book.titlePt}
+                            </p>
+                            <p className="text-[9px] opacity-80 truncate">{book.author}</p>
+                          </div>
+                        </div>
+                      )}
                     </button>
 
                     {/* Details */}

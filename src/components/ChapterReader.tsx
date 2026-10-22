@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Chapter } from '../data/bookTypes';
+import { BookInfo, Chapter } from '../data/bookTypes';
 import { ReaderTheme, FontSize } from './Navbar';
 import {
   ChevronLeft,
@@ -11,10 +11,14 @@ import {
   Send,
   Loader2,
   BookOpenCheck,
+  BookOpen,
 } from 'lucide-react';
 
 interface ChapterReaderProps {
+  book: BookInfo & { coverImageUrl?: string };
   chapter: Chapter;
+  isCoverPage?: boolean;
+  isFirstChapter?: boolean;
   totalChapters: number;
   bookTitle: string;
   bookAuthor: string;
@@ -24,12 +28,16 @@ interface ChapterReaderProps {
   onToggleRead: () => void;
   onPrevChapter: () => void;
   onNextChapter: () => void;
+  onSelectChapter?: (chapterId: string) => void;
   hasPrev: boolean;
   hasNext: boolean;
 }
 
 export const ChapterReader: React.FC<ChapterReaderProps> = ({
+  book,
   chapter,
+  isCoverPage = false,
+  isFirstChapter = false,
   totalChapters,
   bookTitle,
   bookAuthor,
@@ -39,6 +47,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   onToggleRead,
   onPrevChapter,
   onNextChapter,
+  onSelectChapter,
   hasPrev,
   hasNext,
 }) => {
@@ -160,11 +169,161 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     xl: 'text-xl sm:text-2xl leading-relaxed sm:leading-10',
   }[fontSize];
 
+  // ==========================================================
+  // DEDICATED FIRST PAGE BEFORE INTRODUCTION: BOOK COVER VIEW
+  // ==========================================================
+  if (isCoverPage) {
+    const firstChapterTitle = book.chapters?.[0]?.titlePt || 'Introdução';
+
+    return (
+      <article
+        className={`min-h-screen py-10 sm:py-16 px-4 sm:px-8 lg:px-16 transition-colors duration-200 ${themeClasses}`}
+      >
+        <div className="max-w-3xl mx-auto space-y-10">
+          <div className="flex flex-col items-center text-center space-y-8 py-4">
+            <span
+              className={`uppercase tracking-widest font-mono text-[11px] px-3 py-1 rounded-full border ${borderClass} ${subtleTextClass}`}
+            >
+              Capa Original & Folha de Rosto • Edição Digital
+            </span>
+
+            {/* High-Res Extracted Book Cover Frame */}
+            {book.coverImageUrl ? (
+              <div className="relative group">
+                <div className="relative w-64 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-white transition-transform duration-300 hover:scale-[1.01]">
+                  <img
+                    src={book.coverImageUrl}
+                    alt={`Capa do livro ${book.titlePt}`}
+                    className="w-full h-auto object-contain block"
+                  />
+                  {/* Subtle 3D Book Spine Shadow */}
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-black/30 via-white/15 to-transparent" />
+                </div>
+              </div>
+            ) : (
+              <div className="w-64 sm:w-72 h-96 rounded-2xl bg-gradient-to-br from-amber-700 via-amber-900 to-slate-950 border border-amber-500/40 shadow-2xl flex flex-col items-center justify-center p-6 text-amber-100">
+                <BookOpen className="w-12 h-12 mb-4 opacity-80" />
+                <h2 className="text-xl font-bold font-display">{book.titlePt}</h2>
+                <p className="text-xs opacity-80 mt-2">{book.author}</p>
+              </div>
+            )}
+
+            {/* Editorial Title & Metadata */}
+            <div className="space-y-3 max-w-xl">
+              <h1 className="text-3xl sm:text-5xl font-bold font-display tracking-tight leading-tight">
+                {book.titlePt}
+              </h1>
+              {book.subtitlePt && (
+                <p className={`text-lg sm:text-xl font-editorial italic ${subtleTextClass}`}>
+                  {book.subtitlePt}
+                </p>
+              )}
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-sm font-medium">
+                <span>Por {book.author}</span>
+                <span>•</span>
+                <span className={subtleTextClass}>{book.originalYear}</span>
+                {book.publisher && (
+                  <>
+                    <span>•</span>
+                    <span className={subtleTextClass}>{book.publisher}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Translator / Edition Note */}
+            {book.translatorNote && (
+              <div
+                className={`max-w-xl p-5 rounded-2xl border text-xs sm:text-sm font-editorial italic leading-relaxed ${summaryBgClass}`}
+              >
+                {book.translatorNote}
+              </div>
+            )}
+
+            {/* Call to action: Start Reading First Chapter (Introduction) */}
+            <div className="pt-2">
+              <button
+                onClick={onNextChapter}
+                className="inline-flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm sm:text-base transition-all shadow-xl shadow-amber-500/20 cursor-pointer"
+              >
+                <BookOpen className="w-5 h-5" />
+                <span>Iniciar Leitura: {firstChapterTitle}</span>
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Footer Navigation */}
+          <footer
+            className={`pt-10 border-t ${borderClass} flex items-center justify-between no-print`}
+          >
+            <span className={`text-xs font-mono ${subtleTextClass}`}>Capa do Livro</span>
+
+            <button
+              onClick={onNextChapter}
+              className={`flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity ${subtleTextClass} hover:text-current cursor-pointer`}
+            >
+              <span>Avançar para {firstChapterTitle}</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </footer>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article
       className={`min-h-screen py-10 sm:py-16 px-4 sm:px-8 lg:px-16 transition-colors duration-200 ${themeClasses}`}
     >
       <div className="max-w-3xl mx-auto space-y-10">
+        {/* Book Cover Showcase before the Introduction (on the first chapter) */}
+        {isFirstChapter && book.coverImageUrl && (
+          <div
+            className={`p-5 sm:p-6 rounded-2xl border ${summaryBgClass} flex flex-col sm:flex-row items-center gap-6`}
+          >
+            <div
+              onClick={() => onSelectChapter && onSelectChapter('__cover__')}
+              className="relative w-28 sm:w-32 rounded-xl overflow-hidden shadow-lg border border-amber-500/30 bg-white shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+              title="Clique para ver a Capa e Folha de Rosto em tela inteira"
+            >
+              <img
+                src={book.coverImageUrl}
+                alt={`Capa de ${book.titlePt}`}
+                className="w-full h-auto object-contain block"
+              />
+              <div className="pointer-events-none absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/30 to-transparent" />
+            </div>
+
+            <div className="flex-1 text-center sm:text-left space-y-2">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-amber-600 dark:text-amber-400 font-bold">
+                Obra em Leitura
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold font-display leading-snug">
+                {book.titlePt}
+              </h2>
+              {book.subtitlePt && (
+                <p className={`text-xs sm:text-sm font-editorial italic ${subtleTextClass}`}>
+                  {book.subtitlePt}
+                </p>
+              )}
+              <p className="text-xs font-medium">
+                {book.author} ({book.originalYear})
+              </p>
+              {onSelectChapter && (
+                <button
+                  type="button"
+                  onClick={() => onSelectChapter('__cover__')}
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 hover:underline pt-1 font-medium cursor-pointer"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Ver Capa em Tamanho Grande & Folha de Rosto</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <header className={`space-y-4 border-b pb-8 ${borderClass}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -194,7 +353,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
               <button
                 onClick={onToggleRead}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors border ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors border cursor-pointer ${
                   isRead
                     ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
                     : `border-transparent hover:border-current ${subtleTextClass}`
@@ -386,11 +545,11 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             onClick={onPrevChapter}
             disabled={!hasPrev}
             className={`flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity ${
-              hasPrev ? `${subtleTextClass} hover:text-current` : 'opacity-20 cursor-not-allowed'
+              hasPrev ? `${subtleTextClass} hover:text-current cursor-pointer` : 'opacity-20 cursor-not-allowed'
             }`}
           >
             <ChevronLeft className="w-4 h-4" />
-            <span>Capítulo anterior</span>
+            <span>{isFirstChapter ? 'Capa do Livro' : 'Capítulo anterior'}</span>
           </button>
 
           <span className={`text-xs font-mono ${subtleTextClass}`}>
@@ -405,7 +564,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             onClick={onNextChapter}
             disabled={!hasNext}
             className={`flex items-center gap-1.5 text-xs sm:text-sm font-medium transition-opacity ${
-              hasNext ? `${subtleTextClass} hover:text-current` : 'opacity-20 cursor-not-allowed'
+              hasNext ? `${subtleTextClass} hover:text-current cursor-pointer` : 'opacity-20 cursor-not-allowed'
             }`}
           >
             <span>Próximo capítulo</span>

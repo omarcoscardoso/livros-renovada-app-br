@@ -337,6 +337,47 @@ export function createApiApp(customRepo?: IBookRepository) {
     }
   });
 
+  // Serve the extracted cover image of a book
+  app.get('/api/books/:id/cover', (req, res) => {
+    const coverPath = repo.getCoverImagePath(req.params.id);
+    if (!coverPath || !fs.existsSync(coverPath)) {
+      return res.status(404).json({ error: 'Capa não encontrada para este livro.' });
+    }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.sendFile(coverPath);
+  });
+
+  // Allow changing which PDF page is used as the book cover
+  app.post('/api/books/:id/cover-page', async (req, res) => {
+    try {
+      const book = repo.getBookByIdOrSlug(req.params.id);
+      if (!book) {
+        return res.status(404).json({ error: 'Livro não encontrado.' });
+      }
+      const pdfInfo = repo.getPdfFilePath(book.id);
+      if (!pdfInfo || !fs.existsSync(pdfInfo.filePath)) {
+        return res.status(404).json({ error: 'PDF original não encontrado.' });
+      }
+      const pageNumber = Math.max(1, Number(req.body?.pageNumber) || 1);
+      const coverResult = await extractor.extractBookCoverImage(
+        pdfInfo.filePath,
+        book.id,
+        pageNumber
+      );
+      if (!coverResult) {
+        return res.status(500).json({ error: 'Não foi possível renderizar a página da capa.' });
+      }
+      const updated = repo.updateBookContent(book.id, {
+        coverImageFilename: coverResult.filename,
+        coverPageNumber: coverResult.pageNumber,
+      });
+      return res.json({ book: updated });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao atualizar capa.' });
+    }
+  });
+
   // Download or view the original PDF of any book
   app.get('/api/books/:id/pdf', (req, res) => {
     const pdfInfo = repo.getPdfFilePath(req.params.id);

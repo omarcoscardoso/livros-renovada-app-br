@@ -43,6 +43,11 @@ const BOOK_OUTLINE_JSON_SCHEMA = {
       type: 'string',
       description: 'Nota editorial sobre a tradução/estruturação da obra em Português do Brasil.',
     },
+    coverPageNumber: {
+      type: 'integer',
+      description:
+        'Número da página do PDF (1-indexada) onde está a capa principal ou folha de rosto do livro (normalmente 1).',
+    },
     chapterPlan: {
       type: 'array',
       description: 'Lista estruturada dos capítulos identificados no livro.',
@@ -173,9 +178,21 @@ export class GeminiConversionService {
       this.repo.updateBookConversionStatus(
         bookId,
         'processing',
-        'Extraindo páginas e estrutura do arquivo PDF...',
-        10
+        'Identificando capa e extraindo páginas do arquivo PDF...',
+        8
       );
+
+      // Extract cover image right away (defaults to first non-blank page among 1..3)
+      const initialCover = await this.extractor.extractBookCoverImage(pdfFilePath, bookId);
+      if (initialCover) {
+        this.repo.updateBookContent(bookId, {
+          coverImageFilename: initialCover.filename,
+          coverPageNumber: initialCover.pageNumber,
+          status: 'processing',
+          conversionProgress: 'Capa identificada! Extraindo páginas e estrutura do PDF...',
+          conversionPercent: 14,
+        });
+      }
 
       const extracted = await this.extractor.extractPdfPages(pdfFilePath);
       const localBaseline = this.extractor.buildStructuredBookFromPages(
@@ -198,8 +215,10 @@ export class GeminiConversionService {
         this.repo.updateBookContent(bookId, {
           ...localBaseline,
           coverColor: hints.coverColor || 'amber',
+          coverImageFilename: initialCover?.filename,
+          coverPageNumber: initialCover?.pageNumber ?? 1,
           status: 'ready',
-          conversionProgress: 'Convertido localmente (configure GEMINI_API_KEY para tradução/enriquecimento via IA)',
+          conversionProgress: 'Convertido localmente com capa extraída do PDF',
           conversionPercent: 100,
         });
         return;
@@ -209,11 +228,11 @@ export class GeminiConversionService {
       this.repo.updateBookConversionStatus(
         bookId,
         'processing',
-        'Analisando sumário, metadados e estrutura de capítulos com Gemini AI...',
+        'Analisando capa, sumário, metadados e capítulos com Gemini AI...',
         22
       );
 
-      const aiBook = await this.convertWithGemini(
+      const { book: aiBook, aiCoverPage } = await this.convertWithGemini(
         client,
         bookId,
         pdfFilePath,
@@ -223,9 +242,27 @@ export class GeminiConversionService {
         customInstructions
       );
 
+      let finalCover = initialCover;
+      if (
+        aiCoverPage &&
+        aiCoverPage >= 1 &&
+        (!initialCover || aiCoverPage !== initialCover.pageNumber)
+      ) {
+        const refinedCover = await this.extractor.extractBookCoverImage(
+          pdfFilePath,
+          bookId,
+          aiCoverPage
+        );
+        if (refinedCover) {
+          finalCover = refinedCover;
+        }
+      }
+
       this.repo.updateBookContent(bookId, {
         ...aiBook,
         coverColor: hints.coverColor || 'amber',
+        coverImageFilename: finalCover?.filename,
+        coverPageNumber: finalCover?.pageNumber ?? 1,
         status: 'ready',
         conversionProgress: 'Conversão e estruturação com IA concluída com sucesso!',
         conversionPercent: 100,
@@ -267,7 +304,7 @@ export class GeminiConversionService {
     localBaseline: BookInfo,
     hints: BookMetadataHints,
     customInstructions?: string
-  ): Promise<BookInfo> {
+  ): Promise<{ book: BookInfo; aiCoverPage?: number }> {
     const stat = await fs.stat(pdfFilePath);
     const isSmallEnoughForInlinePdf = stat.size <= 15 * 1024 * 1024; // <= 15MB
     const hasSelectableText = extracted.fullText.trim().length > 300;
@@ -446,18 +483,23 @@ Regras obrigatórias:
     }
 
     return {
-      titlePt: String(hints.titlePt || outlineJson.titlePt || localBaseline.titlePt),
-      titleEn: String(outlineJson.titleEn || localBaseline.titleEn),
-      subtitlePt: String(outlineJson.subtitlePt || localBaseline.subtitlePt),
-      subtitleEn: String(outlineJson.subtitleEn || localBaseline.subtitleEn),
-      author: String(hints.author || outlineJson.author || localBaseline.author),
-      originalYear: Number(hints.originalYear || outlineJson.originalYear || localBaseline.originalYear),
-      publisher: String(hints.publisher || outlineJson.publisher || localBaseline.publisher),
-      translatorNote: String(
-        outlineJson.translatorNote ||
-          'Edição digital estruturada e traduzida para o Português do Brasil com auxílio de inteligência artificial.'
-      ),
-      chapters,
+      book: {
+        titlePt: String(hints.titlePt || outlineJson.titlePt || localBaseline.titlePt),
+        titleEn: String(outlineJson.titleEn || localBaseline.titleEn),
+        subtitlePt: String(outlineJson.subtitlePt || localBaseline.subtitlePt),
+        subtitleEn: String(outlineJson.subtitleEn || localBaseline.subtitleEn),
+        author: String(hints.author || outlineJson.author || localBaseline.author),
+        originalYear: Number(
+          hints.originalYear || outlineJson.originalYear || localBaseline.originalYear
+        ),
+        publisher: String(hints.publisher || outlineJson.publisher || localBaseline.publisher),
+        translatorNote: String(
+          outlineJson.translatorNote ||
+            'Edição digital estruturada e traduzida para o Português do Brasil com auxílio de inteligência artificial.'
+        ),
+        chapters,
+      },
+      aiCoverPage: Number(outlineJson.coverPageNumber) || 1,
     };
   }
 

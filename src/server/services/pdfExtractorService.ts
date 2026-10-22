@@ -1,6 +1,10 @@
 import fs from 'node:fs/promises';
-import { extractText, getDocumentProxy } from 'unpdf';
+import fsSync from 'node:fs';
+import path from 'node:path';
+import { extractText, getDocumentProxy, renderPageAsImage } from 'unpdf';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { BookInfo, BookSection, Chapter } from '../../data/bookTypes';
+import { COVER_STORAGE_DIR, ensureStorageDirectories } from '../db/database';
 
 export interface ExtractedPdfData {
   totalPages: number;
@@ -14,6 +18,11 @@ export interface BookMetadataHints {
   originalYear?: number;
   publisher?: string;
   coverColor?: string;
+}
+
+export interface ExtractedCoverResult {
+  filename: string;
+  pageNumber: number;
 }
 
 export class PdfExtractorService {
@@ -32,6 +41,168 @@ export class PdfExtractorService {
       totalPages: totalPages || pages.length,
       pages,
       fullText: pages.join('\n\n'),
+    };
+  }
+
+  /**
+   * Discovers the cover page of the PDF (typically page 1, or page 2/3 if page 1 is blank,
+   * or the page number identified by Gemini AI), renders it as a high-res PNG, crops excess
+   * white scanner margins if needed, and saves it to COVER_STORAGE_DIR.
+   */
+  public async extractBookCoverImage(
+    pdfFilePath: string,
+    bookId: string,
+    preferredPageNumber?: number
+  ): Promise<ExtractedCoverResult | null> {
+    try {
+      ensureStorageDirectories();
+      if (!fsSync.existsSync(pdfFilePath)) {
+        return null;
+      }
+
+      const rawBuffer = await fs.readFile(pdfFilePath);
+      const pdfDoc = await getDocumentProxy(new Uint8Array(rawBuffer));
+      const totalPages = pdfDoc.numPages || 1;
+
+      const candidatePages: number[] = [];
+      if (
+        preferredPageNumber &&
+        preferredPageNumber >= 1 &&
+        preferredPageNumber <= totalPages
+      ) {
+        candidatePages.push(preferredPageNumber);
+      }
+      for (let p = 1; p <= Math.min(3, totalPages); p++) {
+        if (!candidatePages.includes(p)) {
+          candidatePages.push(p);
+        }
+      }
+
+      let selectedPage = candidatePages[0] || 1;
+      let selectedCropBuffer: Buffer | null = null;
+
+      for (const pageNum of candidatePages) {
+        const renderedArrayBuffer = await renderPageAsImage(new Uint8Array(rawBuffer), pageNum, {
+          canvasImport: () => import('@napi-rs/canvas'),
+          scale: 2.0,
+        });
+
+        const pagePngBuffer = Buffer.from(renderedArrayBuffer);
+        const analysis = await this.analyzeAndCropCoverPage(pagePngBuffer);
+
+        if (analysis.hasVisualContent) {
+          selectedPage = pageNum;
+          selectedCropBuffer = analysis.croppedBuffer;
+          break;
+        }
+
+        // Keep fallback to page 1 even if nearly blank
+        if (!selectedCropBuffer) {
+          selectedCropBuffer = analysis.croppedBuffer;
+        }
+      }
+
+      if (!selectedCropBuffer) {
+        return null;
+      }
+
+      const safeId = bookId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${safeId}_cover.png`;
+      const outputPath = path.join(COVER_STORAGE_DIR, filename);
+      await fs.writeFile(outputPath, selectedCropBuffer);
+
+      return {
+        filename,
+        pageNumber: selectedPage,
+      };
+    } catch (error) {
+      console.error('Aviso ao extrair capa do PDF:', error);
+      return null;
+    }
+  }
+
+  private async analyzeAndCropCoverPage(
+    pngBuffer: Buffer
+  ): Promise<{ hasVisualContent: boolean; croppedBuffer: Buffer }> {
+    const img = await loadImage(pngBuffer);
+    const width = img.width;
+    const height = img.height;
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0);
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    let nonWhitePixels = 0;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const a = data[idx + 3];
+
+        if (a > 15 && (r < 246 || g < 246 || b < 246)) {
+          nonWhitePixels++;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    const totalPixels = width * height;
+    const nonWhiteRatio = nonWhitePixels / Math.max(1, totalPixels);
+    const hasVisualContent = nonWhiteRatio > 0.004;
+
+    if (!hasVisualContent || minX >= maxX || minY >= maxY) {
+      return { hasVisualContent: false, croppedBuffer: pngBuffer };
+    }
+
+    const contentW = maxX - minX + 1;
+    const contentH = maxY - minY + 1;
+
+    // Check if the cover is an embedded graphic surrounded by wide white margins (e.g. < 85% of page width/height)
+    const widthRatio = contentW / width;
+    const heightRatio = contentH / height;
+    const aspect = contentW / Math.max(1, contentH);
+
+    if (
+      widthRatio > 0.25 &&
+      heightRatio > 0.25 &&
+      (widthRatio < 0.88 || heightRatio < 0.88) &&
+      aspect >= 0.45 &&
+      aspect <= 0.9
+    ) {
+      const pad = Math.round(Math.min(width, height) * 0.01);
+      const cropX = Math.max(0, minX - pad);
+      const cropY = Math.max(0, minY - pad);
+      const cropW = Math.min(width - cropX, contentW + pad * 2);
+      const cropH = Math.min(height - cropY, contentH + pad * 2);
+
+      const outCanvas = createCanvas(cropW, cropH);
+      const outCtx = outCanvas.getContext('2d');
+      outCtx.fillStyle = '#ffffff';
+      outCtx.fillRect(0, 0, cropW, cropH);
+      outCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      return {
+        hasVisualContent: true,
+        croppedBuffer: outCanvas.toBuffer('image/png'),
+      };
+    }
+
+    return {
+      hasVisualContent: true,
+      croppedBuffer: canvas.toBuffer('image/png'),
     };
   }
 
@@ -116,7 +287,6 @@ export class PdfExtractorService {
       };
     }
 
-    // Group pages into logical chapters using chapter heading detection or balanced page chunks
     const rawChapters: {
       title: string;
       startPage: number;
@@ -174,7 +344,6 @@ export class PdfExtractorService {
       const combinedText = group.pagesText.join('\n\n');
       const paragraphs = this.splitIntoReadableParagraphs(combinedText);
 
-      // Group paragraphs into sections of 4-6 paragraphs
       const sections: BookSection[] = [];
       const parasPerSection = Math.max(3, Math.min(6, Math.ceil(paragraphs.length / 3)));
 
@@ -273,7 +442,6 @@ export class PdfExtractorService {
     let buffer = '';
 
     for (const block of rawBlocks) {
-      // Skip standalone page numbers
       if (/^\d{1,4}$/.test(block)) continue;
 
       if (buffer.length + block.length < 420) {
@@ -293,7 +461,6 @@ export class PdfExtractorService {
       result.push(buffer);
     }
 
-    // If a single block is huge, split by sentences into ~450 char paragraphs
     const finalParagraphs: string[] = [];
     for (const para of result) {
       if (para.length <= 750) {

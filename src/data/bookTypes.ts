@@ -30,6 +30,7 @@ export interface BookInfo {
   originalYear: number;
   publisher: string;
   translatorNote: string;
+  coverImageUrl?: string;
   chapters: Chapter[];
 }
 
@@ -39,6 +40,8 @@ export interface StoredBook extends BookInfo {
   id: string;
   slug: string;
   coverColor: string;
+  coverImageUrl?: string;
+  coverPageNumber?: number;
   hasOriginalPdf: boolean;
   originalPdfName?: string;
   status: BookStatus;
@@ -61,6 +64,8 @@ export interface BookSummary {
   publisher: string;
   translatorNote: string;
   coverColor: string;
+  coverImageUrl?: string;
+  coverPageNumber?: number;
   chapterCount: number;
   totalEstimatedMinutes: number;
   hasOriginalPdf: boolean;

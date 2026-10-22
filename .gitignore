@@ -9,3 +9,5 @@ coverage/
 storage/*.sqlite*
 storage/pdfs/*
 !storage/pdfs/.gitkeep
+storage/covers/*
+!storage/covers/.gitkeep

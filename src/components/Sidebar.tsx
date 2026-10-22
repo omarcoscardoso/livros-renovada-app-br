@@ -186,6 +186,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </div>
 
+          {/* First Page before Introduction: Book Cover */}
+          <button
+            onClick={() => {
+              onSelectChapter('__cover__');
+              onClose();
+            }}
+            className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center gap-2.5 mb-1 ${
+              currentChapterId === '__cover__'
+                ? 'bg-amber-500/15 text-amber-300 font-semibold'
+                : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
+            }`}
+          >
+            <div className="shrink-0 p-0.5">
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+            </div>
+            <div className="truncate flex-1">Capa & Folha de Rosto</div>
+          </button>
+
           {chapters.map((ch, idx) => {
             const isActive = ch.id === currentChapterId;
             const isRead = readChapters.includes(ch.id);

@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BookSummary, Chapter, StoredBook, BookStatus } from '../../data/bookTypes';
 import { bookInfo, allChapters } from '../../data/bookData';
-import { getDatabase, PDF_STORAGE_DIR, PROJECT_ROOT } from '../db/database';
+import {
+  getDatabase,
+  PDF_STORAGE_DIR,
+  COVER_STORAGE_DIR,
+  PROJECT_ROOT,
+} from '../db/database';
 
 export interface CreateBookInput {
   id: string;
@@ -17,6 +22,8 @@ export interface CreateBookInput {
   publisher: string;
   translatorNote: string;
   coverColor?: string;
+  coverImageFilename?: string | null;
+  coverPageNumber?: number;
   pdfFilename?: string | null;
   originalPdfName?: string | null;
   status?: BookStatus;
@@ -30,6 +37,7 @@ export interface IBookRepository {
   listBooks(): BookSummary[];
   getBookByIdOrSlug(idOrSlug: string): StoredBook | null;
   getPdfFilePath(idOrSlug: string): { filePath: string; downloadName: string } | null;
+  getCoverImagePath(idOrSlug: string): string | null;
   createBook(input: CreateBookInput): StoredBook;
   updateBookConversionStatus(
     id: string,
@@ -40,7 +48,11 @@ export interface IBookRepository {
   ): void;
   updateBookContent(
     id: string,
-    data: Partial<Omit<CreateBookInput, 'id' | 'slug'>> & { status?: BookStatus; conversionPercent?: number; conversionProgress?: string }
+    data: Partial<Omit<CreateBookInput, 'id' | 'slug'>> & {
+      status?: BookStatus;
+      conversionPercent?: number;
+      conversionProgress?: string;
+    }
   ): StoredBook | null;
   deleteBook(id: string): boolean;
   getSetting(key: string): string | null;
@@ -58,8 +70,10 @@ export class SqliteBookRepository implements IBookRepository {
 
   public seedDefaultBookIfNeeded(): void {
     const existing = this.db
-      .prepare('SELECT id FROM books WHERE id = ? OR slug = ?')
-      .get(DEFAULT_BOOK_ID, DEFAULT_BOOK_ID) as { id: string } | undefined;
+      .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
+      .get(DEFAULT_BOOK_ID, DEFAULT_BOOK_ID) as
+      | { id: string; cover_image_filename?: string | null }
+      | undefined;
 
     const defaultPdfSource = path.join(
       PROJECT_ROOT,
@@ -75,6 +89,20 @@ export class SqliteBookRepository implements IBookRepository {
       fs.copyFileSync(defaultPdfSource, targetPdfPath);
     }
 
+    const defaultCoverSource = path.join(
+      PROJECT_ROOT,
+      'public',
+      'assets',
+      'aistudio',
+      'The_Cell_Church_Cover.png'
+    );
+    const defaultCoverFilename = `${DEFAULT_BOOK_ID}_cover.png`;
+    const targetCoverPath = path.join(COVER_STORAGE_DIR, defaultCoverFilename);
+
+    if (fs.existsSync(defaultCoverSource) && !fs.existsSync(targetCoverPath)) {
+      fs.copyFileSync(defaultCoverSource, targetCoverPath);
+    }
+
     if (!existing) {
       this.createBook({
         id: DEFAULT_BOOK_ID,
@@ -88,6 +116,8 @@ export class SqliteBookRepository implements IBookRepository {
         publisher: bookInfo.publisher,
         translatorNote: bookInfo.translatorNote,
         coverColor: 'amber',
+        coverImageFilename: defaultCoverFilename,
+        coverPageNumber: 1,
         pdfFilename: defaultPdfFilename,
         originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
         status: 'ready',
@@ -95,7 +125,21 @@ export class SqliteBookRepository implements IBookRepository {
         conversionPercent: 100,
         chapters: allChapters,
       });
+    } else if (!existing.cover_image_filename) {
+      this.db
+        .prepare(
+          'UPDATE books SET cover_image_filename = ?, cover_page_number = 1 WHERE id = ?'
+        )
+        .run(defaultCoverFilename, existing.id);
     }
+  }
+
+  private resolveCoverImageUrl(row: Record<string, any>): string | undefined {
+    const id = String(row.id);
+    if (row.cover_image_filename || id === DEFAULT_BOOK_ID) {
+      return `/api/books/${encodeURIComponent(id)}/cover`;
+    }
+    return undefined;
   }
 
   public listBooks(): BookSummary[] {
@@ -130,6 +174,8 @@ export class SqliteBookRepository implements IBookRepository {
         publisher: String(row.publisher),
         translatorNote: String(row.translator_note),
         coverColor: String(row.cover_color || 'amber'),
+        coverImageUrl: this.resolveCoverImageUrl(row),
+        coverPageNumber: Number(row.cover_page_number || 1),
         chapterCount: chapters.length,
         totalEstimatedMinutes,
         hasOriginalPdf: Boolean(row.pdf_filename),
@@ -173,6 +219,8 @@ export class SqliteBookRepository implements IBookRepository {
       publisher: String(row.publisher),
       translatorNote: String(row.translator_note),
       coverColor: String(row.cover_color || 'amber'),
+      coverImageUrl: this.resolveCoverImageUrl(row),
+      coverPageNumber: Number(row.cover_page_number || 1),
       hasOriginalPdf: Boolean(row.pdf_filename),
       originalPdfName: row.original_pdf_name ? String(row.original_pdf_name) : undefined,
       status: (row.status as BookStatus) || 'ready',
@@ -186,6 +234,34 @@ export class SqliteBookRepository implements IBookRepository {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
+  }
+
+  public getCoverImagePath(idOrSlug: string): string | null {
+    const row = this.db
+      .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
+      .get(idOrSlug, idOrSlug) as Record<string, any> | undefined;
+
+    if (row?.cover_image_filename) {
+      const candidate = path.join(COVER_STORAGE_DIR, String(row.cover_image_filename));
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    if (idOrSlug === DEFAULT_BOOK_ID || row?.id === DEFAULT_BOOK_ID) {
+      const fallbackPublic = path.join(
+        PROJECT_ROOT,
+        'public',
+        'assets',
+        'aistudio',
+        'The_Cell_Church_Cover.png'
+      );
+      if (fs.existsSync(fallbackPublic)) {
+        return fallbackPublic;
+      }
+    }
+
+    return null;
   }
 
   public getPdfFilePath(idOrSlug: string): { filePath: string; downloadName: string } | null {
@@ -226,9 +302,10 @@ export class SqliteBookRepository implements IBookRepository {
       INSERT INTO books (
         id, slug, title_pt, title_en, subtitle_pt, subtitle_en,
         author, original_year, publisher, translator_note, cover_color,
+        cover_image_filename, cover_page_number,
         pdf_filename, original_pdf_name, status, conversion_progress,
         conversion_percent, chapters_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -243,6 +320,8 @@ export class SqliteBookRepository implements IBookRepository {
       input.publisher,
       input.translatorNote,
       input.coverColor || 'amber',
+      input.coverImageFilename || null,
+      input.coverPageNumber ?? 1,
       input.pdfFilename || null,
       input.originalPdfName || null,
       input.status || 'ready',
@@ -281,10 +360,14 @@ export class SqliteBookRepository implements IBookRepository {
       conversionProgress?: string;
     }
   ): StoredBook | null {
-    const existing = this.getBookByIdOrSlug(id);
-    if (!existing) return null;
+    const existingRow = this.db
+      .prepare('SELECT * FROM books WHERE id = ?')
+      .get(id) as Record<string, any> | undefined;
+    if (!existingRow) return null;
 
+    const existing = this.getBookByIdOrSlug(id)!;
     const now = new Date().toISOString();
+
     const updatedTitlePt = data.titlePt ?? existing.titlePt;
     const updatedTitleEn = data.titleEn ?? existing.titleEn;
     const updatedSubtitlePt = data.subtitlePt ?? existing.subtitlePt;
@@ -294,6 +377,14 @@ export class SqliteBookRepository implements IBookRepository {
     const updatedPublisher = data.publisher ?? existing.publisher;
     const updatedNote = data.translatorNote ?? existing.translatorNote;
     const updatedColor = data.coverColor ?? existing.coverColor;
+    const updatedCoverFilename =
+      data.coverImageFilename !== undefined
+        ? data.coverImageFilename
+        : (existingRow.cover_image_filename as string | null);
+    const updatedCoverPageNumber =
+      data.coverPageNumber !== undefined
+        ? data.coverPageNumber
+        : Number(existingRow.cover_page_number || 1);
     const updatedStatus = data.status ?? existing.status;
     const updatedProgress = data.conversionProgress ?? existing.conversionProgress ?? 'Concluído';
     const updatedPercent = data.conversionPercent ?? existing.conversionPercent ?? 100;
@@ -304,7 +395,8 @@ export class SqliteBookRepository implements IBookRepository {
         `UPDATE books SET
           title_pt = ?, title_en = ?, subtitle_pt = ?, subtitle_en = ?,
           author = ?, original_year = ?, publisher = ?, translator_note = ?,
-          cover_color = ?, status = ?, conversion_progress = ?, conversion_percent = ?,
+          cover_color = ?, cover_image_filename = ?, cover_page_number = ?,
+          status = ?, conversion_progress = ?, conversion_percent = ?,
           error_message = NULL, chapters_json = ?, updated_at = ?
          WHERE id = ?`
       )
@@ -318,6 +410,8 @@ export class SqliteBookRepository implements IBookRepository {
         updatedPublisher,
         updatedNote,
         updatedColor,
+        updatedCoverFilename,
+        updatedCoverPageNumber,
         updatedStatus,
         updatedProgress,
         updatedPercent,
@@ -335,11 +429,20 @@ export class SqliteBookRepository implements IBookRepository {
     }
 
     const pdfInfo = this.getPdfFilePath(id);
+    const coverPath = this.getCoverImagePath(id);
     const result = this.db.prepare('DELETE FROM books WHERE id = ?').run(id);
 
     if (pdfInfo && pdfInfo.filePath.startsWith(PDF_STORAGE_DIR) && fs.existsSync(pdfInfo.filePath)) {
       try {
         fs.unlinkSync(pdfInfo.filePath);
+      } catch {
+        // ignore cleanup error
+      }
+    }
+
+    if (coverPath && coverPath.startsWith(COVER_STORAGE_DIR) && fs.existsSync(coverPath)) {
+      try {
+        fs.unlinkSync(coverPath);
       } catch {
         // ignore cleanup error
       }

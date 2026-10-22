@@ -26,6 +26,8 @@ const FALLBACK_DEFAULT_BOOK: StoredBook = {
   id: DEFAULT_BOOK_ID,
   slug: DEFAULT_BOOK_ID,
   coverColor: 'amber',
+  coverImageUrl: `/api/books/${DEFAULT_BOOK_ID}/cover`,
+  coverPageNumber: 1,
   hasOriginalPdf: true,
   originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
   status: 'ready',
@@ -47,6 +49,8 @@ const FALLBACK_DEFAULT_SUMMARY: BookSummary = {
   publisher: FALLBACK_DEFAULT_BOOK.publisher,
   translatorNote: FALLBACK_DEFAULT_BOOK.translatorNote,
   coverColor: 'amber',
+  coverImageUrl: `/api/books/${DEFAULT_BOOK_ID}/cover`,
+  coverPageNumber: 1,
   chapterCount: allChapters.length,
   totalEstimatedMinutes: 145,
   hasOriginalPdf: true,
@@ -64,7 +68,8 @@ export default function App() {
   const [activeBook, setActiveBook] = useState<StoredBook>(FALLBACK_DEFAULT_BOOK);
   const [hasGeminiKey, setHasGeminiKey] = useState<boolean>(false);
 
-  const [currentChapterId, setCurrentChapterId] = useState<string>('intro');
+  // '__cover__' represents the first page (Book Cover & Title Page) before the Introduction
+  const [currentChapterId, setCurrentChapterId] = useState<string>('__cover__');
 
   // Persist theme & font size in browser localStorage
   const [theme, setTheme] = useState<ReaderTheme>(() => {
@@ -124,6 +129,7 @@ export default function App() {
   const readChaptersForActiveBook = readChaptersMap[activeBook.id] || [];
 
   const handleToggleReadChapter = (chapterId: string) => {
+    if (chapterId === '__cover__') return;
     const updatedList = toggleBookChapterRead(activeBook.id, chapterId);
     setReadChaptersMap((prev) => ({
       ...prev,
@@ -178,9 +184,10 @@ export default function App() {
           const chapters: Chapter[] = data.book.chapters || [];
           const savedChapterId = getBookLastVisitedChapter(data.book.id);
           const targetChapterId =
-            savedChapterId && chapters.some((c) => c.id === savedChapterId)
+            savedChapterId &&
+            (savedChapterId === '__cover__' || chapters.some((c) => c.id === savedChapterId))
               ? savedChapterId
-              : chapters[0]?.id || 'intro';
+              : '__cover__';
           setCurrentChapterId(targetChapterId);
           setCurrentView('reader');
           return;
@@ -190,13 +197,14 @@ export default function App() {
       if (bookId === DEFAULT_BOOK_ID) {
         setActiveBook(FALLBACK_DEFAULT_BOOK);
         const savedChapterId = getBookLastVisitedChapter(DEFAULT_BOOK_ID);
-        setCurrentChapterId(savedChapterId || 'intro');
+        setCurrentChapterId(savedChapterId || '__cover__');
         setCurrentView('reader');
       }
     } catch (err) {
       console.error('Erro ao abrir livro:', err);
       if (bookId === DEFAULT_BOOK_ID) {
         setActiveBook(FALLBACK_DEFAULT_BOOK);
+        setCurrentChapterId('__cover__');
         setCurrentView('reader');
       }
     }
@@ -256,12 +264,15 @@ export default function App() {
       ? activeBook.chapters
       : allChapters;
 
-  const currentChapterIndex = Math.max(
-    0,
-    activeChapters.findIndex((c) => c.id === currentChapterId)
-  );
+  const isCoverPage = currentChapterId === '__cover__';
+  const currentChapterIndex = isCoverPage
+    ? -1
+    : Math.max(
+        0,
+        activeChapters.findIndex((c) => c.id === currentChapterId)
+      );
   const currentChapter: Chapter =
-    activeChapters[currentChapterIndex] || activeChapters[0];
+    activeChapters[Math.max(0, currentChapterIndex)] || activeChapters[0];
 
   // Global Keyboard shortcuts (Ctrl+K or Cmd+K in reader view)
   useEffect(() => {
@@ -281,6 +292,11 @@ export default function App() {
   }, [currentChapterId, activeBook.id, currentView]);
 
   const handleNextChapter = () => {
+    if (isCoverPage) {
+      const firstId = activeChapters[0]?.id || 'intro';
+      handleSelectChapter(firstId);
+      return;
+    }
     if (currentChapterIndex < activeChapters.length - 1) {
       const nextId = activeChapters[currentChapterIndex + 1].id;
       handleSelectChapter(nextId);
@@ -288,6 +304,11 @@ export default function App() {
   };
 
   const handlePrevChapter = () => {
+    if (isCoverPage) return;
+    if (currentChapterIndex === 0) {
+      handleSelectChapter('__cover__');
+      return;
+    }
     if (currentChapterIndex > 0) {
       const prevId = activeChapters[currentChapterIndex - 1].id;
       handleSelectChapter(prevId);
@@ -350,7 +371,7 @@ export default function App() {
           <Sidebar
             book={activeBook}
             chapters={activeChapters}
-            currentChapterId={currentChapter.id}
+            currentChapterId={isCoverPage ? '__cover__' : currentChapter.id}
             onSelectChapter={handleSelectChapter}
             onToggleChapterRead={handleToggleReadChapter}
             onOpenSearch={() => setIsSearchOpen(true)}
@@ -384,25 +405,29 @@ export default function App() {
               fontSize={fontSize}
               onChangeFontSize={handleChangeFontSize}
               bookTitle={activeBook.titlePt}
-              chapterTitle={currentChapter.titlePt}
+              chapterTitle={isCoverPage ? 'Capa & Folha de Rosto' : currentChapter.titlePt}
               totalBooksCount={Math.max(1, booksList.length)}
               hasOriginalPdf={activeBook.hasOriginalPdf}
             />
 
             <main className="flex-1">
               <ChapterReader
+                book={activeBook}
                 chapter={currentChapter}
+                isCoverPage={isCoverPage}
+                isFirstChapter={!isCoverPage && currentChapterIndex === 0}
                 totalChapters={activeChapters.length}
                 bookTitle={activeBook.titlePt}
                 bookAuthor={activeBook.author}
                 theme={theme}
                 fontSize={fontSize}
-                isRead={readChaptersForActiveBook.includes(currentChapter.id)}
+                isRead={!isCoverPage && readChaptersForActiveBook.includes(currentChapter.id)}
                 onToggleRead={() => handleToggleReadChapter(currentChapter.id)}
                 onPrevChapter={handlePrevChapter}
                 onNextChapter={handleNextChapter}
-                hasPrev={currentChapterIndex > 0}
-                hasNext={currentChapterIndex < activeChapters.length - 1}
+                onSelectChapter={handleSelectChapter}
+                hasPrev={!isCoverPage}
+                hasNext={isCoverPage || currentChapterIndex < activeChapters.length - 1}
               />
             </main>
           </div>
@@ -410,6 +435,13 @@ export default function App() {
           {/* Clean printable book view for window.print() (PDF generation) */}
           <div className="print-only p-8 text-black bg-white">
             <div className="text-center py-12 border-b-2 border-black">
+              {activeBook.coverImageUrl && (
+                <img
+                  src={activeBook.coverImageUrl}
+                  alt={activeBook.titlePt}
+                  className="max-w-[260px] mx-auto mb-6 border border-gray-300"
+                />
+              )}
               <h1 className="text-3xl font-bold font-serif mb-2">{activeBook.titlePt}</h1>
               <h3 className="text-lg text-gray-700 font-serif">{activeBook.subtitlePt}</h3>
               <p className="mt-4 text-sm font-semibold">
@@ -473,9 +505,8 @@ export default function App() {
         hasGeminiKey={hasGeminiKey}
         onBookReady={(newBook) => {
           setActiveBook(newBook);
-          const firstCh = newBook.chapters?.[0]?.id || 'intro';
-          setCurrentChapterId(firstCh);
-          saveBookLastVisitedChapter(newBook.id, firstCh);
+          setCurrentChapterId('__cover__');
+          saveBookLastVisitedChapter(newBook.id, '__cover__');
           setCurrentView('reader');
           fetchLibrary();
         }}
