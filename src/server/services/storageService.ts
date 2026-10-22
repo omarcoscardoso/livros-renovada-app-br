@@ -5,23 +5,38 @@ import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { Storage, Bucket } from '@google-cloud/storage';
 import { OAuth2Client } from 'google-auth-library';
-import {
-  COVER_STORAGE_DIR,
-  PDF_STORAGE_DIR,
-  PROJECT_ROOT,
-  ensureStorageDirectories,
-} from '../db/database';
+import { PROJECT_ROOT } from '../db/database';
 
 EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 25);
 
 export const DEFAULT_GCS_BUCKET = 'livros-renovada-app-br';
 export const DEFAULT_GCP_PROJECT_ID = 'renovada-app-br';
 
-/**
- * Creates an OAuth2Client backed by `gcloud auth print-access-token` for local development
- * when Application Default Credentials (ADC) are not configured or require interactive reauth.
- * On Cloud Run (`K_SERVICE` is set), standard Metadata Server ADC is used automatically.
- */
+export interface IBookAssetStorage {
+  savePdf(filename: string, buffer: Buffer): Promise<void>;
+  saveCover(filename: string, buffer: Buffer): Promise<void>;
+  getPdfBuffer(filename: string): Promise<Buffer | null>;
+  getCoverBuffer(filename: string): Promise<Buffer | null>;
+  deletePdf(filename: string): Promise<void>;
+  deleteCover(filename: string): Promise<void>;
+  ensureDefaultAssets(
+    defaultPdfSource: string,
+    defaultPdfFilename: string,
+    defaultCoverSource: string,
+    defaultCoverFilename: string
+  ): Promise<void>;
+}
+
+export interface IDatabaseSnapshotStorage {
+  restoreDatabaseSnapshot(targetLocalPath: string): Promise<boolean>;
+  syncDatabaseSnapshot(sourceLocalPath: string): Promise<void>;
+}
+
+export interface IStorageService extends IBookAssetStorage, IDatabaseSnapshotStorage {
+  isGcsEnabled(): boolean;
+  getBucketName(): string;
+}
+
 function createLocalGcloudOAuthClient(): OAuth2Client {
   const client = new OAuth2Client();
   const refreshToken = () => {
@@ -39,55 +54,19 @@ function createLocalGcloudOAuthClient(): OAuth2Client {
   return client;
 }
 
-export interface IStorageService {
-  isGcsEnabled(): boolean;
-  getBucketName(): string;
-  savePdf(filename: string, buffer: Buffer): Promise<string>;
-  saveCover(filename: string, buffer: Buffer): Promise<void>;
-  getPdfBuffer(filename: string): Promise<Buffer | null>;
-  getCoverBuffer(filename: string): Promise<Buffer | null>;
-  ensureLocalPdfPath(filename: string): Promise<string | null>;
-  deletePdf(filename: string): Promise<void>;
-  deleteCover(filename: string): Promise<void>;
-  restoreDatabaseIfNeeded(localDbPath: string): Promise<boolean>;
-  syncDatabaseToGcs(localDbPath: string): Promise<void>;
-  ensureDefaultAssetsInStorage(
-    defaultPdfSource: string,
-    defaultPdfFilename: string,
-    defaultCoverSource: string,
-    defaultCoverFilename: string
-  ): Promise<void>;
-}
-
-export class CloudStorageService implements IStorageService {
+export class GcsStorageService implements IStorageService {
   private storage: Storage | null = null;
   private bucket: Bucket | null = null;
   private readonly bucketName: string;
-  private readonly gcsEnabled: boolean;
   private dbSyncTimer: NodeJS.Timeout | null = null;
 
-  constructor(options?: { bucketName?: string; gcsEnabled?: boolean }) {
+  constructor(options?: { bucketName?: string }) {
     this.bucketName =
       options?.bucketName ||
       process.env.GCS_BUCKET ||
       DEFAULT_GCS_BUCKET;
 
-    const isTestEnv = process.env.NODE_ENV === 'test';
-    const driverEnv = (process.env.STORAGE_DRIVER || '').toLowerCase();
-
-    if (options?.gcsEnabled !== undefined) {
-      this.gcsEnabled = options.gcsEnabled;
-    } else if (driverEnv === 'local') {
-      this.gcsEnabled = false;
-    } else if (driverEnv === 'gcs') {
-      this.gcsEnabled = true;
-    } else {
-      this.gcsEnabled = !isTestEnv && Boolean(this.bucketName);
-    }
-
-    if (this.gcsEnabled) {
-      this.initGcsClient();
-    }
+    this.initGcsClient();
   }
 
   private initGcsClient(): void {
@@ -105,15 +84,10 @@ export class CloudStorageService implements IStorageService {
         const credentials = JSON.parse(
           Buffer.from(keyBase64, 'base64').toString('utf-8')
         );
-        this.storage = new Storage({
-          projectId,
-          credentials,
-        });
+        this.storage = new Storage({ projectId, credentials });
       } else if (isCloudRun || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        // Cloud Run uses the attached Service Account via Metadata Server (ADC)
         this.storage = new Storage({ projectId });
       } else {
-        // Local environment: prefer gcloud CLI active account if available, otherwise standard ADC
         try {
           const cliAuth = createLocalGcloudOAuthClient();
           this.storage = new Storage({
@@ -134,94 +108,58 @@ export class CloudStorageService implements IStorageService {
   }
 
   public isGcsEnabled(): boolean {
-    return this.gcsEnabled && this.bucket !== null;
+    return this.bucket !== null;
   }
 
   public getBucketName(): string {
     return this.bucketName;
   }
 
-  public async savePdf(filename: string, buffer: Buffer): Promise<string> {
-    ensureStorageDirectories();
-    const safeName = path.basename(filename);
-    const localPath = path.join(PDF_STORAGE_DIR, safeName);
-
-    // Save local working copy for immediate extraction / caching
-    await fsPromises.writeFile(localPath, buffer);
-
-    if (this.bucket) {
-      const remotePath = `pdfs/${safeName}`;
-      await this.bucket.file(remotePath).save(buffer, {
-        resumable: false,
-        contentType: 'application/pdf',
-        metadata: {
-          cacheControl: 'public, max-age=86400',
-        },
-      });
+  public async savePdf(filename: string, buffer: Buffer): Promise<void> {
+    if (!this.bucket) {
+      throw new Error('GCS Bucket não está disponível para salvar PDF.');
     }
-
-    return localPath;
+    const safeName = path.basename(filename);
+    await this.bucket.file(`pdfs/${safeName}`).save(buffer, {
+      resumable: false,
+      contentType: 'application/pdf',
+      metadata: {
+        cacheControl: 'public, max-age=86400',
+      },
+    });
   }
 
   public async saveCover(filename: string, buffer: Buffer): Promise<void> {
-    ensureStorageDirectories();
-    const safeName = path.basename(filename);
-    const localPath = path.join(COVER_STORAGE_DIR, safeName);
-
-    // Keep local cache copy
-    await fsPromises.writeFile(localPath, buffer);
-
-    if (this.bucket) {
-      const remotePath = `covers/${safeName}`;
-      await this.bucket.file(remotePath).save(buffer, {
-        resumable: false,
-        contentType: 'image/png',
-        metadata: {
-          cacheControl: 'public, max-age=3600',
-        },
-      });
+    if (!this.bucket) {
+      throw new Error('GCS Bucket não está disponível para salvar capa.');
     }
+    const safeName = path.basename(filename);
+    await this.bucket.file(`covers/${safeName}`).save(buffer, {
+      resumable: false,
+      contentType: 'image/png',
+      metadata: {
+        cacheControl: 'public, max-age=3600',
+      },
+    });
   }
 
   public async getPdfBuffer(filename: string): Promise<Buffer | null> {
     const safeName = path.basename(filename);
 
-    // 1. Try GCS bucket first when enabled
     if (this.bucket) {
       try {
         const file = this.bucket.file(`pdfs/${safeName}`);
         const [exists] = await file.exists();
         if (exists) {
           const [buffer] = await file.download();
-          // Cache locally for fast subsequent reads
-          try {
-            ensureStorageDirectories();
-            await fsPromises.writeFile(path.join(PDF_STORAGE_DIR, safeName), buffer);
-          } catch {
-            // ignore local cache write error
-          }
           return buffer;
         }
       } catch (err) {
-        console.warn(`Aviso ao ler PDF "${safeName}" do GCS, tentando fallback local:`, err);
+        console.warn(`Aviso ao ler PDF "${safeName}" do GCS:`, err);
       }
     }
 
-    // 2. Fallback to local storage directory
-    const localStoragePath = path.join(PDF_STORAGE_DIR, safeName);
-    if (fs.existsSync(localStoragePath)) {
-      const buf = await fsPromises.readFile(localStoragePath);
-      // Backfill to GCS if enabled
-      if (this.bucket) {
-        void this.bucket
-          .file(`pdfs/${safeName}`)
-          .save(buf, { resumable: false, contentType: 'application/pdf' })
-          .catch(() => {});
-      }
-      return buf;
-    }
-
-    // 3. Fallback to bundled public assets
+    // Fallback to bundled public assets
     const publicAssetPath = path.join(
       PROJECT_ROOT,
       'public',
@@ -239,41 +177,20 @@ export class CloudStorageService implements IStorageService {
   public async getCoverBuffer(filename: string): Promise<Buffer | null> {
     const safeName = path.basename(filename);
 
-    // 1. Try GCS bucket first when enabled
     if (this.bucket) {
       try {
         const file = this.bucket.file(`covers/${safeName}`);
         const [exists] = await file.exists();
         if (exists) {
           const [buffer] = await file.download();
-          // Cache locally
-          try {
-            ensureStorageDirectories();
-            await fsPromises.writeFile(path.join(COVER_STORAGE_DIR, safeName), buffer);
-          } catch {
-            // ignore local cache write error
-          }
           return buffer;
         }
       } catch (err) {
-        console.warn(`Aviso ao ler capa "${safeName}" do GCS, tentando fallback local:`, err);
+        console.warn(`Aviso ao ler capa "${safeName}" do GCS:`, err);
       }
     }
 
-    // 2. Fallback to local storage directory
-    const localCoverPath = path.join(COVER_STORAGE_DIR, safeName);
-    if (fs.existsSync(localCoverPath)) {
-      const buf = await fsPromises.readFile(localCoverPath);
-      if (this.bucket) {
-        void this.bucket
-          .file(`covers/${safeName}`)
-          .save(buf, { resumable: false, contentType: 'image/png' })
-          .catch(() => {});
-      }
-      return buf;
-    }
-
-    // 3. Fallback to bundled default cover
+    // Fallback to bundled default cover
     const publicCoverPath = path.join(
       PROJECT_ROOT,
       'public',
@@ -292,91 +209,31 @@ export class CloudStorageService implements IStorageService {
     return null;
   }
 
-  public async ensureLocalPdfPath(filename: string): Promise<string | null> {
-    ensureStorageDirectories();
-    const safeName = path.basename(filename);
-    const localPath = path.join(PDF_STORAGE_DIR, safeName);
-
-    if (fs.existsSync(localPath)) {
-      return localPath;
-    }
-
-    const publicPath = path.join(
-      PROJECT_ROOT,
-      'public',
-      'assets',
-      'aistudio',
-      safeName
-    );
-    if (fs.existsSync(publicPath)) {
-      fs.copyFileSync(publicPath, localPath);
-      return localPath;
-    }
-
-    if (this.bucket) {
-      try {
-        const file = this.bucket.file(`pdfs/${safeName}`);
-        const [exists] = await file.exists();
-        if (exists) {
-          const [buffer] = await file.download();
-          await fsPromises.writeFile(localPath, buffer);
-          return localPath;
-        }
-      } catch (err) {
-        console.error(`Erro ao baixar PDF "${safeName}" do GCS para processamento local:`, err);
-      }
-    }
-
-    return null;
-  }
-
   public async deletePdf(filename: string): Promise<void> {
+    if (!this.bucket) return;
     const safeName = path.basename(filename);
-    const localPath = path.join(PDF_STORAGE_DIR, safeName);
-
-    if (fs.existsSync(localPath)) {
-      try {
-        await fsPromises.unlink(localPath);
-      } catch {
-        // ignore
-      }
-    }
-
-    if (this.bucket) {
-      try {
-        await this.bucket.file(`pdfs/${safeName}`).delete({ ignoreNotFound: true });
-      } catch (err) {
-        console.warn(`Aviso ao excluir PDF "${safeName}" do GCS:`, err);
-      }
+    try {
+      await this.bucket.file(`pdfs/${safeName}`).delete({ ignoreNotFound: true });
+    } catch (err) {
+      console.warn(`Aviso ao excluir PDF "${safeName}" do GCS:`, err);
     }
   }
 
   public async deleteCover(filename: string): Promise<void> {
+    if (!this.bucket) return;
     const safeName = path.basename(filename);
-    const localPath = path.join(COVER_STORAGE_DIR, safeName);
-
-    if (fs.existsSync(localPath)) {
-      try {
-        await fsPromises.unlink(localPath);
-      } catch {
-        // ignore
-      }
-    }
-
-    if (this.bucket) {
-      try {
-        await this.bucket.file(`covers/${safeName}`).delete({ ignoreNotFound: true });
-      } catch (err) {
-        console.warn(`Aviso ao excluir capa "${safeName}" do GCS:`, err);
-      }
+    try {
+      await this.bucket.file(`covers/${safeName}`).delete({ ignoreNotFound: true });
+    } catch (err) {
+      console.warn(`Aviso ao excluir capa "${safeName}" do GCS:`, err);
     }
   }
 
-  public async restoreDatabaseIfNeeded(localDbPath: string): Promise<boolean> {
+  public async restoreDatabaseSnapshot(targetLocalPath: string): Promise<boolean> {
     if (!this.bucket) return false;
 
     const shouldRestore =
-      !fs.existsSync(localDbPath) || process.env.FORCE_GCS_DB_RESTORE === 'true';
+      !fs.existsSync(targetLocalPath) || process.env.FORCE_GCS_DB_RESTORE === 'true';
     if (!shouldRestore) {
       return false;
     }
@@ -388,9 +245,13 @@ export class CloudStorageService implements IStorageService {
         return false;
       }
 
-      ensureStorageDirectories();
+      const targetDir = path.dirname(targetLocalPath);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
       const [buffer] = await remoteDbFile.download();
-      await fsPromises.writeFile(localDbPath, buffer);
+      await fsPromises.writeFile(targetLocalPath, buffer);
       console.log(
         `Banco de dados SQLite restaurado com sucesso de gs://${this.bucketName}/db/library.sqlite`
       );
@@ -401,7 +262,7 @@ export class CloudStorageService implements IStorageService {
     }
   }
 
-  public async syncDatabaseToGcs(localDbPath: string): Promise<void> {
+  public async syncDatabaseSnapshot(sourceLocalPath: string): Promise<void> {
     if (!this.bucket) return;
 
     if (this.dbSyncTimer) {
@@ -410,8 +271,8 @@ export class CloudStorageService implements IStorageService {
 
     this.dbSyncTimer = setTimeout(async () => {
       try {
-        if (!fs.existsSync(localDbPath) || !this.bucket) return;
-        const buffer = await fsPromises.readFile(localDbPath);
+        if (!fs.existsSync(sourceLocalPath) || !this.bucket) return;
+        const buffer = await fsPromises.readFile(sourceLocalPath);
         await this.bucket.file('db/library.sqlite').save(buffer, {
           resumable: false,
           contentType: 'application/x-sqlite3',
@@ -422,7 +283,7 @@ export class CloudStorageService implements IStorageService {
     }, 300);
   }
 
-  public async ensureDefaultAssetsInStorage(
+  public async ensureDefaultAssets(
     defaultPdfSource: string,
     defaultPdfFilename: string,
     defaultCoverSource: string,
@@ -460,11 +321,123 @@ export class CloudStorageService implements IStorageService {
   }
 }
 
+/**
+ * In-memory storage implementation for isolated unit tests or offline local environments.
+ */
+export class InMemoryStorageService implements IStorageService {
+  private pdfs = new Map<string, Buffer>();
+  private covers = new Map<string, Buffer>();
+  private dbSnapshot: Buffer | null = null;
+  private readonly bucketName: string;
+
+  constructor(bucketName: string = DEFAULT_GCS_BUCKET) {
+    this.bucketName = bucketName;
+  }
+
+  public isGcsEnabled(): boolean {
+    return false;
+  }
+
+  public getBucketName(): string {
+    return this.bucketName;
+  }
+
+  public async savePdf(filename: string, buffer: Buffer): Promise<void> {
+    this.pdfs.set(path.basename(filename), buffer);
+  }
+
+  public async saveCover(filename: string, buffer: Buffer): Promise<void> {
+    this.covers.set(path.basename(filename), buffer);
+  }
+
+  public async getPdfBuffer(filename: string): Promise<Buffer | null> {
+    const safeName = path.basename(filename);
+    if (this.pdfs.has(safeName)) {
+      return this.pdfs.get(safeName)!;
+    }
+    const publicAssetPath = path.join(
+      PROJECT_ROOT,
+      'public',
+      'assets',
+      'aistudio',
+      safeName
+    );
+    if (fs.existsSync(publicAssetPath)) {
+      return fsPromises.readFile(publicAssetPath);
+    }
+    return null;
+  }
+
+  public async getCoverBuffer(filename: string): Promise<Buffer | null> {
+    const safeName = path.basename(filename);
+    if (this.covers.has(safeName)) {
+      return this.covers.get(safeName)!;
+    }
+    const publicCoverPath = path.join(
+      PROJECT_ROOT,
+      'public',
+      'assets',
+      'aistudio',
+      'The_Cell_Church_Cover.png'
+    );
+    if (
+      (safeName.includes('cell-church-larry-stockstill') ||
+        safeName === 'The_Cell_Church_Cover.png') &&
+      fs.existsSync(publicCoverPath)
+    ) {
+      return fsPromises.readFile(publicCoverPath);
+    }
+    return null;
+  }
+
+  public async deletePdf(filename: string): Promise<void> {
+    this.pdfs.delete(path.basename(filename));
+  }
+
+  public async deleteCover(filename: string): Promise<void> {
+    this.covers.delete(path.basename(filename));
+  }
+
+  public async restoreDatabaseSnapshot(targetLocalPath: string): Promise<boolean> {
+    if (this.dbSnapshot) {
+      await fsPromises.writeFile(targetLocalPath, this.dbSnapshot);
+      return true;
+    }
+    return false;
+  }
+
+  public async syncDatabaseSnapshot(sourceLocalPath: string): Promise<void> {
+    if (fs.existsSync(sourceLocalPath)) {
+      this.dbSnapshot = await fsPromises.readFile(sourceLocalPath);
+    }
+  }
+
+  public async ensureDefaultAssets(
+    defaultPdfSource: string,
+    defaultPdfFilename: string,
+    defaultCoverSource: string,
+    defaultCoverFilename: string
+  ): Promise<void> {
+    if (fs.existsSync(defaultPdfSource) && !this.pdfs.has(defaultPdfFilename)) {
+      this.pdfs.set(defaultPdfFilename, await fsPromises.readFile(defaultPdfSource));
+    }
+    if (fs.existsSync(defaultCoverSource) && !this.covers.has(defaultCoverFilename)) {
+      this.covers.set(defaultCoverFilename, await fsPromises.readFile(defaultCoverSource));
+    }
+  }
+}
+
 let defaultStorageInstance: IStorageService | null = null;
 
 export function getStorageService(): IStorageService {
   if (!defaultStorageInstance) {
-    defaultStorageInstance = new CloudStorageService();
+    const isTest = process.env.NODE_ENV === 'test';
+    const driver = (process.env.STORAGE_DRIVER || '').toLowerCase();
+    if (isTest || driver === 'memory' || driver === 'local') {
+      defaultStorageInstance = new InMemoryStorageService();
+    } else {
+      defaultStorageInstance = new GcsStorageService();
+    }
   }
   return defaultStorageInstance;
 }

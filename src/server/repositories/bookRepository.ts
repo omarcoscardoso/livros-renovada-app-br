@@ -5,8 +5,6 @@ import { BookSummary, Chapter, StoredBook, BookStatus } from '../../data/bookTyp
 import { bookInfo, allChapters } from '../../data/bookData';
 import {
   getDatabase,
-  PDF_STORAGE_DIR,
-  COVER_STORAGE_DIR,
   PROJECT_ROOT,
   DEFAULT_DB_PATH,
 } from '../db/database';
@@ -78,7 +76,7 @@ export class SqliteBookRepository implements IBookRepository {
 
   private triggerRemoteDbSync(): void {
     if (this.isDefaultDb) {
-      void this.storage.syncDatabaseToGcs(DEFAULT_DB_PATH);
+      void this.storage.syncDatabaseSnapshot(DEFAULT_DB_PATH);
     }
   }
 
@@ -97,11 +95,6 @@ export class SqliteBookRepository implements IBookRepository {
       'The_Cell_Church_-_Larry_Stockstill_020021f2.pdf'
     );
     const defaultPdfFilename = 'The_Cell_Church_-_Larry_Stockstill_020021f2.pdf';
-    const targetPdfPath = path.join(PDF_STORAGE_DIR, defaultPdfFilename);
-
-    if (fs.existsSync(defaultPdfSource) && !fs.existsSync(targetPdfPath)) {
-      fs.copyFileSync(defaultPdfSource, targetPdfPath);
-    }
 
     const defaultCoverSource = path.join(
       PROJECT_ROOT,
@@ -111,13 +104,8 @@ export class SqliteBookRepository implements IBookRepository {
       'The_Cell_Church_Cover.png'
     );
     const defaultCoverFilename = `${DEFAULT_BOOK_ID}_cover.png`;
-    const targetCoverPath = path.join(COVER_STORAGE_DIR, defaultCoverFilename);
 
-    if (fs.existsSync(defaultCoverSource) && !fs.existsSync(targetCoverPath)) {
-      fs.copyFileSync(defaultCoverSource, targetCoverPath);
-    }
-
-    void this.storage.ensureDefaultAssetsInStorage(
+    void this.storage.ensureDefaultAssets(
       defaultPdfSource,
       defaultPdfFilename,
       defaultCoverSource,
@@ -272,18 +260,7 @@ export class SqliteBookRepository implements IBookRepository {
   }
 
   public getCoverImagePath(idOrSlug: string): string | null {
-    const row = this.db
-      .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
-      .get(idOrSlug, idOrSlug) as Record<string, any> | undefined;
-
-    if (row?.cover_image_filename) {
-      const candidate = path.join(COVER_STORAGE_DIR, String(row.cover_image_filename));
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    if (idOrSlug === DEFAULT_BOOK_ID || row?.id === DEFAULT_BOOK_ID) {
+    if (idOrSlug === DEFAULT_BOOK_ID) {
       const fallbackPublic = path.join(
         PROJECT_ROOT,
         'public',
@@ -295,7 +272,6 @@ export class SqliteBookRepository implements IBookRepository {
         return fallbackPublic;
       }
     }
-
     return null;
   }
 
@@ -318,14 +294,6 @@ export class SqliteBookRepository implements IBookRepository {
       .get(idOrSlug, idOrSlug) as Record<string, any> | undefined;
 
     if (!row || !row.pdf_filename) return null;
-
-    const candidateStorage = path.join(PDF_STORAGE_DIR, String(row.pdf_filename));
-    if (fs.existsSync(candidateStorage)) {
-      return {
-        filePath: candidateStorage,
-        downloadName: String(row.original_pdf_name || `${row.slug}.pdf`),
-      };
-    }
 
     const candidatePublic = path.join(
       PROJECT_ROOT,
@@ -481,28 +449,14 @@ export class SqliteBookRepository implements IBookRepository {
 
     const pdfMeta = this.getPdfMetadata(id);
     const coverFilename = this.getCoverFilename(id);
-    const pdfInfo = this.getPdfFilePath(id);
-    const coverPath = this.getCoverImagePath(id);
     const result = this.db.prepare('DELETE FROM books WHERE id = ?').run(id);
 
     if (pdfMeta?.filename) {
       void this.storage.deletePdf(pdfMeta.filename);
-    } else if (pdfInfo && pdfInfo.filePath.startsWith(PDF_STORAGE_DIR) && fs.existsSync(pdfInfo.filePath)) {
-      try {
-        fs.unlinkSync(pdfInfo.filePath);
-      } catch {
-        // ignore cleanup error
-      }
     }
 
     if (coverFilename) {
       void this.storage.deleteCover(coverFilename);
-    } else if (coverPath && coverPath.startsWith(COVER_STORAGE_DIR) && fs.existsSync(coverPath)) {
-      try {
-        fs.unlinkSync(coverPath);
-      } catch {
-        // ignore cleanup error
-      }
     }
 
     this.triggerRemoteDbSync();
