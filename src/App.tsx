@@ -1,0 +1,449 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { allChapters, bookInfo } from './data/bookData';
+import { BookSummary, Chapter, StoredBook } from './data/bookTypes';
+import { generateBookPdf } from './utils/pdfGenerator';
+import { Navbar, ReaderTheme, FontSize } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
+import { ChapterReader } from './components/ChapterReader';
+import { SearchModal } from './components/SearchModal';
+import { PdfViewerModal } from './components/PdfViewerModal';
+import { LibraryModal } from './components/LibraryModal';
+import { UploadBookModal } from './components/UploadBookModal';
+import { BookEditorModal } from './components/BookEditorModal';
+import { Loader2, Check } from 'lucide-react';
+
+const DEFAULT_BOOK_ID = 'cell-church-larry-stockstill';
+
+const FALLBACK_DEFAULT_BOOK: StoredBook = {
+  ...bookInfo,
+  id: DEFAULT_BOOK_ID,
+  slug: DEFAULT_BOOK_ID,
+  coverColor: 'amber',
+  hasOriginalPdf: true,
+  originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
+  status: 'ready',
+  conversionProgress: 'Livro completo traduzido e revisado',
+  conversionPercent: 100,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+export default function App() {
+  const [booksList, setBooksList] = useState<BookSummary[]>([]);
+  const [activeBook, setActiveBook] = useState<StoredBook>(FALLBACK_DEFAULT_BOOK);
+  const [hasGeminiKey, setHasGeminiKey] = useState<boolean>(false);
+
+  const [currentChapterId, setCurrentChapterId] = useState<string>('intro');
+  const [theme, setTheme] = useState<ReaderTheme>('sepia');
+  const [fontSize, setFontSize] = useState<FontSize>('base');
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [isPdfOpen, setIsPdfOpen] = useState<boolean>(false);
+  const [pdfTargetBook, setPdfTargetBook] = useState<StoredBook | BookSummary>(
+    FALLBACK_DEFAULT_BOOK
+  );
+  const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
+  const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
+  const [editingBook, setEditingBook] = useState<StoredBook | null>(null);
+
+  const [pdfStatus, setPdfStatus] = useState<string | null>(null);
+
+  const getStorageKey = (bookId: string) =>
+    bookId === DEFAULT_BOOK_ID
+      ? 'cell_church_read_chapters'
+      : `library_read_chapters_${bookId}`;
+
+  const [readChapters, setReadChapters] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('cell_church_read_chapters');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Load readChapters when activeBook changes
+  useEffect(() => {
+    try {
+      const key = getStorageKey(activeBook.id);
+      const saved = localStorage.getItem(key);
+      setReadChapters(saved ? JSON.parse(saved) : []);
+    } catch {
+      setReadChapters([]);
+    }
+  }, [activeBook.id]);
+
+  // Save read chapters to localStorage
+  useEffect(() => {
+    try {
+      const key = getStorageKey(activeBook.id);
+      localStorage.setItem(key, JSON.stringify(readChapters));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [readChapters, activeBook.id]);
+
+  const fetchLibrary = useCallback(async () => {
+    try {
+      const res = await fetch('/api/books');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.books)) {
+        setBooksList(data.books);
+      }
+      if (typeof data.hasGeminiKey === 'boolean') {
+        setHasGeminiKey(data.hasGeminiKey);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar lista da biblioteca:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLibrary();
+  }, [fetchLibrary]);
+
+  // Poll library if any book in booksList is currently processing
+  useEffect(() => {
+    const hasProcessing = booksList.some((b) => b.status === 'processing');
+    if (!hasProcessing) return;
+
+    const timer = setInterval(() => {
+      fetchLibrary();
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [booksList, fetchLibrary]);
+
+  const handleSelectBook = async (bookId: string) => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.book) {
+        setActiveBook(data.book);
+        const firstChId = data.book.chapters?.[0]?.id || 'intro';
+        setCurrentChapterId(firstChId);
+      }
+    } catch (err) {
+      console.error('Erro ao abrir livro:', err);
+    }
+  };
+
+  const handleOpenEditBook = async (bookId: string) => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.book) {
+        setEditingBook(data.book);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar livro para edição:', err);
+    }
+  };
+
+  const handleDeleteBook = async (bookId: string) => {
+    if (!window.confirm('Tem certeza que deseja remover este livro da biblioteca?')) return;
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || 'Não foi possível excluir o livro.');
+        return;
+      }
+      await fetchLibrary();
+      if (activeBook.id === bookId) {
+        handleSelectBook(DEFAULT_BOOK_ID);
+      }
+    } catch (err) {
+      console.error('Erro ao excluir livro:', err);
+    }
+  };
+
+  const handleReprocessBook = async (bookId: string) => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/reprocess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        await fetchLibrary();
+      }
+    } catch (err) {
+      console.error('Erro ao reprocessar livro:', err);
+    }
+  };
+
+  const activeChapters: Chapter[] =
+    activeBook.chapters && activeBook.chapters.length > 0
+      ? activeBook.chapters
+      : allChapters;
+
+  const currentChapterIndex = Math.max(
+    0,
+    activeChapters.findIndex((c) => c.id === currentChapterId)
+  );
+  const currentChapter: Chapter =
+    activeChapters[currentChapterIndex] || activeChapters[0];
+
+  // Global Keyboard shortcuts (Ctrl+K or Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Scroll to top on chapter or book change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentChapterId, activeBook.id]);
+
+  const toggleReadStatus = (id: string) => {
+    setReadChapters((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleNextChapter = () => {
+    if (currentChapterIndex < activeChapters.length - 1) {
+      setCurrentChapterId(activeChapters[currentChapterIndex + 1].id);
+    }
+  };
+
+  const handlePrevChapter = () => {
+    if (currentChapterIndex > 0) {
+      setCurrentChapterId(activeChapters[currentChapterIndex - 1].id);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (pdfStatus) return;
+    setPdfStatus('Gerando PDF do livro completo...');
+    try {
+      await generateBookPdf(activeBook, activeChapters, (status) => {
+        setPdfStatus(status);
+      });
+      setPdfStatus('PDF baixado com sucesso!');
+      setTimeout(() => setPdfStatus(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setPdfStatus('Erro ao gerar PDF.');
+      setTimeout(() => setPdfStatus(null), 3000);
+    }
+  };
+
+  const themeBg =
+    theme === 'dark' ? 'bg-[#0f141c]' : theme === 'sepia' ? 'bg-[#f7f3e8]' : 'bg-white';
+
+  return (
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${themeBg}`}>
+      {/* Toast Feedback for PDF Generation */}
+      {pdfStatus && (
+        <div className="fixed top-16 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/40 text-slate-100 text-xs sm:text-sm font-semibold shadow-2xl backdrop-blur-md">
+          {pdfStatus.includes('sucesso') ? (
+            <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+          ) : (
+            <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+          )}
+          <span>{pdfStatus}</span>
+        </div>
+      )}
+
+      {/* Table of Contents & Library Drawer */}
+      <Sidebar
+        book={activeBook}
+        chapters={activeChapters}
+        currentChapterId={currentChapter.id}
+        onSelectChapter={(id) => setCurrentChapterId(id)}
+        onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenPdf={() => {
+          setPdfTargetBook(activeBook);
+          setIsPdfOpen(true);
+        }}
+        onOpenLibrary={() => setIsLibraryOpen(true)}
+        onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenEditor={() => setEditingBook(activeBook)}
+        readChapters={readChapters}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        totalBooksCount={Math.max(1, booksList.length)}
+      />
+
+      {/* Main E-Book Reader Area */}
+      <div className="flex-1 lg:pl-72 flex flex-col min-h-screen">
+        <Navbar
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+          onOpenSearch={() => setIsSearchOpen(true)}
+          onOpenPdf={() => {
+            setPdfTargetBook(activeBook);
+            setIsPdfOpen(true);
+          }}
+          onPrintPdf={handleDownloadPdf}
+          onOpenLibrary={() => setIsLibraryOpen(true)}
+          onOpenUpload={() => setIsUploadOpen(true)}
+          theme={theme}
+          onChangeTheme={setTheme}
+          fontSize={fontSize}
+          onChangeFontSize={setFontSize}
+          bookTitle={activeBook.titlePt}
+          chapterTitle={currentChapter.titlePt}
+          totalBooksCount={Math.max(1, booksList.length)}
+          hasOriginalPdf={activeBook.hasOriginalPdf}
+        />
+
+        <main className="flex-1">
+          <ChapterReader
+            chapter={currentChapter}
+            totalChapters={activeChapters.length}
+            bookTitle={activeBook.titlePt}
+            bookAuthor={activeBook.author}
+            theme={theme}
+            fontSize={fontSize}
+            isRead={readChapters.includes(currentChapter.id)}
+            onToggleRead={() => toggleReadStatus(currentChapter.id)}
+            onPrevChapter={handlePrevChapter}
+            onNextChapter={handleNextChapter}
+            hasPrev={currentChapterIndex > 0}
+            hasNext={currentChapterIndex < activeChapters.length - 1}
+          />
+        </main>
+      </div>
+
+      {/* Clean printable book view for window.print() (PDF generation) */}
+      <div className="print-only p-8 text-black bg-white">
+        <div className="text-center py-12 border-b-2 border-black">
+          <h1 className="text-3xl font-bold font-serif mb-2">{activeBook.titlePt}</h1>
+          <h3 className="text-lg text-gray-700 font-serif">{activeBook.subtitlePt}</h3>
+          <p className="mt-4 text-sm font-semibold">
+            Autor: {activeBook.author} ({activeBook.originalYear})
+          </p>
+          <p className="text-xs text-gray-500 italic mt-2">{activeBook.translatorNote}</p>
+        </div>
+
+        {activeChapters.map((ch) => (
+          <div key={ch.id} className="page-break my-10">
+            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2 mb-3">
+              {ch.titlePt}
+            </h2>
+            {ch.subtitlePt && (
+              <p className="text-sm italic text-gray-600 mb-4">{ch.subtitlePt}</p>
+            )}
+            <div className="bg-gray-100 p-4 border-l-4 border-gray-600 mb-6 text-sm">
+              <strong>Resumo:</strong> {ch.summaryPt}
+            </div>
+
+            {ch.sections.map((sec) => (
+              <div key={sec.id} className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">{sec.titlePt}</h3>
+                {sec.paragraphsPt.map((p, pIdx) => (
+                  <p key={pIdx} className="text-sm leading-relaxed mb-3 text-justify">
+                    {p}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Search Modal */}
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelectResult={(chapterId) => setCurrentChapterId(chapterId)}
+        chapters={activeChapters}
+        bookTitle={activeBook.titlePt}
+      />
+
+      {/* PDF Original Viewer */}
+      <PdfViewerModal
+        isOpen={isPdfOpen}
+        onClose={() => setIsPdfOpen(false)}
+        bookId={pdfTargetBook.id}
+        bookTitle={pdfTargetBook.titlePt}
+        bookAuthor={pdfTargetBook.author}
+        originalYear={pdfTargetBook.originalYear}
+        originalPdfName={pdfTargetBook.originalPdfName}
+      />
+
+      {/* Library Bookshelf Modal */}
+      <LibraryModal
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        books={booksList.length > 0 ? booksList : [
+          {
+            id: FALLBACK_DEFAULT_BOOK.id,
+            slug: FALLBACK_DEFAULT_BOOK.slug,
+            titlePt: FALLBACK_DEFAULT_BOOK.titlePt,
+            titleEn: FALLBACK_DEFAULT_BOOK.titleEn,
+            subtitlePt: FALLBACK_DEFAULT_BOOK.subtitlePt,
+            subtitleEn: FALLBACK_DEFAULT_BOOK.subtitleEn,
+            author: FALLBACK_DEFAULT_BOOK.author,
+            originalYear: FALLBACK_DEFAULT_BOOK.originalYear,
+            publisher: FALLBACK_DEFAULT_BOOK.publisher,
+            translatorNote: FALLBACK_DEFAULT_BOOK.translatorNote,
+            coverColor: 'amber',
+            chapterCount: allChapters.length,
+            totalEstimatedMinutes: 145,
+            hasOriginalPdf: true,
+            originalPdfName: 'The_Cell_Church_Larry_Stockstill_Original.pdf',
+            status: 'ready',
+            createdAt: FALLBACK_DEFAULT_BOOK.createdAt,
+            updatedAt: FALLBACK_DEFAULT_BOOK.updatedAt,
+          },
+        ]}
+        activeBookId={activeBook.id}
+        onSelectBook={handleSelectBook}
+        onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenPdfForBook={(bookId) => {
+          const found = booksList.find((b) => b.id === bookId) || activeBook;
+          setPdfTargetBook(found);
+          setIsLibraryOpen(false);
+          setIsPdfOpen(true);
+        }}
+        onEditBook={(bookId) => {
+          setIsLibraryOpen(false);
+          handleOpenEditBook(bookId);
+        }}
+        onDeleteBook={handleDeleteBook}
+        onReprocessBook={handleReprocessBook}
+      />
+
+      {/* PDF Upload & Conversion Modal */}
+      <UploadBookModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        hasGeminiKey={hasGeminiKey}
+        onBookReady={(newBook) => {
+          setActiveBook(newBook);
+          setCurrentChapterId(newBook.chapters?.[0]?.id || 'intro');
+          fetchLibrary();
+        }}
+        onRefreshLibrary={fetchLibrary}
+      />
+
+      {/* Book & Chapters Editor Modal */}
+      <BookEditorModal
+        isOpen={Boolean(editingBook)}
+        onClose={() => setEditingBook(null)}
+        book={editingBook}
+        onSaved={(updatedBook) => {
+          if (updatedBook.id === activeBook.id) {
+            setActiveBook(updatedBook);
+          }
+          fetchLibrary();
+        }}
+      />
+    </div>
+  );
+}
