@@ -5,7 +5,11 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { ensureStorageDirectories, PDF_STORAGE_DIR } from './src/server/db/database';
+import {
+  DEFAULT_DB_PATH,
+  ensureStorageDirectories,
+  PDF_STORAGE_DIR,
+} from './src/server/db/database';
 import {
   DEFAULT_BOOK_ID,
   IBookRepository,
@@ -13,6 +17,10 @@ import {
 } from './src/server/repositories/bookRepository';
 import { PdfExtractorService } from './src/server/services/pdfExtractorService';
 import { GeminiConversionService } from './src/server/services/geminiConversionService';
+import {
+  getStorageService,
+  IStorageService,
+} from './src/server/services/storageService';
 
 dotenv.config();
 
@@ -69,11 +77,15 @@ function slugify(text: string): string {
     .slice(0, 70);
 }
 
-export function createApiApp(customRepo?: IBookRepository) {
-  const repo = customRepo || new SqliteBookRepository();
+export function createApiApp(
+  customRepo?: IBookRepository,
+  customStorage?: IStorageService
+) {
+  const storageService = customStorage || getStorageService();
+  const repo = customRepo || new SqliteBookRepository(undefined, storageService);
   repo.seedDefaultBookIfNeeded();
 
-  const extractor = new PdfExtractorService();
+  const extractor = new PdfExtractorService(storageService);
   const conversionService = new GeminiConversionService(repo, extractor);
 
   const app = express();
@@ -82,7 +94,12 @@ export function createApiApp(customRepo?: IBookRepository) {
   // Health & AI Key check endpoint
   app.get('/api/health', (_req, res) => {
     const hasGeminiKey = Boolean(conversionService.resolveApiKey());
-    res.json({ status: 'ok', hasGeminiKey });
+    res.json({
+      status: 'ok',
+      hasGeminiKey,
+      storageBucket: storageService.getBucketName(),
+      gcsEnabled: storageService.isGcsEnabled(),
+    });
   });
 
   // Save Gemini API Key from UI Settings
@@ -137,6 +154,10 @@ export function createApiApp(customRepo?: IBookRepository) {
       if (!file) {
         return res.status(400).json({ error: 'Por favor, selecione um arquivo PDF válido.' });
       }
+
+      // Persist uploaded PDF to Google Cloud Storage bucket (gs://livros-renovada-app-br/pdfs/)
+      const pdfBuffer = await fs.promises.readFile(file.path);
+      const localPdfPath = await storageService.savePdf(file.filename, pdfBuffer);
 
       const rawTitle =
         (req.body.titlePt as string)?.trim() ||
@@ -203,7 +224,7 @@ export function createApiApp(customRepo?: IBookRepository) {
       // Kick off background conversion (non-blocking)
       void conversionService.processUploadedBook(
         id,
-        file.path,
+        localPdfPath,
         file.originalname,
         {
           titlePt: rawTitle,
@@ -238,8 +259,12 @@ export function createApiApp(customRepo?: IBookRepository) {
         });
       }
 
-      const pdfInfo = repo.getPdfFilePath(book.id);
-      if (!pdfInfo || !fs.existsSync(pdfInfo.filePath)) {
+      const pdfMeta = repo.getPdfMetadata(book.id);
+      const localPdfPath = pdfMeta
+        ? await storageService.ensureLocalPdfPath(pdfMeta.filename)
+        : repo.getPdfFilePath(book.id)?.filePath || null;
+
+      if (!localPdfPath || !fs.existsSync(localPdfPath)) {
         return res.status(404).json({ error: 'Arquivo PDF original não encontrado para este livro.' });
       }
 
@@ -257,8 +282,8 @@ export function createApiApp(customRepo?: IBookRepository) {
 
       void conversionService.processUploadedBook(
         book.id,
-        pdfInfo.filePath,
-        pdfInfo.downloadName,
+        localPdfPath,
+        pdfMeta?.downloadName || `${book.slug}.pdf`,
         {
           titlePt: book.titlePt,
           author: book.author,
@@ -337,15 +362,29 @@ export function createApiApp(customRepo?: IBookRepository) {
     }
   });
 
-  // Serve the extracted cover image of a book
-  app.get('/api/books/:id/cover', (req, res) => {
-    const coverPath = repo.getCoverImagePath(req.params.id);
-    if (!coverPath || !fs.existsSync(coverPath)) {
-      return res.status(404).json({ error: 'Capa não encontrada para este livro.' });
+  // Serve the extracted cover image of a book (from GCS bucket with local fallback)
+  app.get('/api/books/:id/cover', async (req, res) => {
+    try {
+      const coverFilename = repo.getCoverFilename(req.params.id);
+      if (coverFilename) {
+        const coverBuffer = await storageService.getCoverBuffer(coverFilename);
+        if (coverBuffer) {
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          return res.send(coverBuffer);
+        }
+      }
+
+      const coverPath = repo.getCoverImagePath(req.params.id);
+      if (!coverPath || !fs.existsSync(coverPath)) {
+        return res.status(404).json({ error: 'Capa não encontrada para este livro.' });
+      }
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.sendFile(coverPath);
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao carregar capa.' });
     }
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    return res.sendFile(coverPath);
   });
 
   // Allow changing which PDF page is used as the book cover
@@ -355,13 +394,17 @@ export function createApiApp(customRepo?: IBookRepository) {
       if (!book) {
         return res.status(404).json({ error: 'Livro não encontrado.' });
       }
-      const pdfInfo = repo.getPdfFilePath(book.id);
-      if (!pdfInfo || !fs.existsSync(pdfInfo.filePath)) {
+      const pdfMeta = repo.getPdfMetadata(book.id);
+      const localPdfPath = pdfMeta
+        ? await storageService.ensureLocalPdfPath(pdfMeta.filename)
+        : repo.getPdfFilePath(book.id)?.filePath || null;
+
+      if (!localPdfPath || !fs.existsSync(localPdfPath)) {
         return res.status(404).json({ error: 'PDF original não encontrado.' });
       }
       const pageNumber = Math.max(1, Number(req.body?.pageNumber) || 1);
       const coverResult = await extractor.extractBookCoverImage(
-        pdfInfo.filePath,
+        localPdfPath,
         book.id,
         pageNumber
       );
@@ -378,20 +421,48 @@ export function createApiApp(customRepo?: IBookRepository) {
     }
   });
 
-  // Download or view the original PDF of any book
-  app.get('/api/books/:id/pdf', (req, res) => {
-    const pdfInfo = repo.getPdfFilePath(req.params.id);
-    if (!pdfInfo || !fs.existsSync(pdfInfo.filePath)) {
-      return res.status(404).json({ error: 'Arquivo PDF original não encontrado para este livro.' });
+  // Download or view the original PDF of any book (from GCS bucket with local fallback)
+  app.get('/api/books/:id/pdf', async (req, res) => {
+    try {
+      const pdfMeta = repo.getPdfMetadata(req.params.id);
+      if (pdfMeta) {
+        const pdfBuffer = await storageService.getPdfBuffer(pdfMeta.filename);
+        if (pdfBuffer) {
+          res.setHeader('Content-Type', 'application/pdf');
+          const safeName = pdfMeta.downloadName.replace(/[^a-zA-Z0-9._-]/g, '_');
+          res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+          return res.send(pdfBuffer);
+        }
+      }
+
+      const pdfInfo = repo.getPdfFilePath(req.params.id);
+      if (!pdfInfo || !fs.existsSync(pdfInfo.filePath)) {
+        return res.status(404).json({ error: 'Arquivo PDF original não encontrado para este livro.' });
+      }
+      res.setHeader('Content-Type', 'application/pdf');
+      const safeName = pdfInfo.downloadName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+      return res.sendFile(pdfInfo.filePath);
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao carregar PDF.' });
     }
-    res.setHeader('Content-Type', 'application/pdf');
-    const safeName = pdfInfo.downloadName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
-    return res.sendFile(pdfInfo.filePath);
   });
 
   // Backwards-compatible endpoint to download the original PDF of "The Cell Church"
-  app.get('/api/download-original-pdf', (_req, res) => {
+  app.get('/api/download-original-pdf', async (_req, res) => {
+    const pdfMeta = repo.getPdfMetadata(DEFAULT_BOOK_ID);
+    if (pdfMeta) {
+      const pdfBuffer = await storageService.getPdfBuffer(pdfMeta.filename);
+      if (pdfBuffer) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          'attachment; filename="The_Cell_Church_Larry_Stockstill_Original.pdf"'
+        );
+        return res.send(pdfBuffer);
+      }
+    }
+
     const pdfInfo = repo.getPdfFilePath(DEFAULT_BOOK_ID);
     if (pdfInfo && fs.existsSync(pdfInfo.filePath)) {
       res.setHeader('Content-Type', 'application/pdf');
@@ -493,7 +564,10 @@ export function createApiApp(customRepo?: IBookRepository) {
 }
 
 async function startServer() {
-  const app = createApiApp();
+  const storageService = getStorageService();
+  await storageService.restoreDatabaseIfNeeded(DEFAULT_DB_PATH);
+
+  const app = createApiApp(undefined, storageService);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');

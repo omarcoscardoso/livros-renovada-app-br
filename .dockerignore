@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+dist
+coverage
+tests
+*.log
+.DS_Store
+.env*
+storage/*.sqlite*
+storage/pdfs/*
+storage/covers/*
+Dockerfile
+.dockerignore

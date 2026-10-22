@@ -8,7 +8,9 @@ import {
   PDF_STORAGE_DIR,
   COVER_STORAGE_DIR,
   PROJECT_ROOT,
+  DEFAULT_DB_PATH,
 } from '../db/database';
+import { getStorageService, IStorageService } from '../services/storageService';
 
 export interface CreateBookInput {
   id: string;
@@ -37,7 +39,9 @@ export interface IBookRepository {
   listBooks(): BookSummary[];
   getBookByIdOrSlug(idOrSlug: string): StoredBook | null;
   getPdfFilePath(idOrSlug: string): { filePath: string; downloadName: string } | null;
+  getPdfMetadata(idOrSlug: string): { filename: string; downloadName: string } | null;
   getCoverImagePath(idOrSlug: string): string | null;
+  getCoverFilename(idOrSlug: string): string | null;
   createBook(input: CreateBookInput): StoredBook;
   updateBookConversionStatus(
     id: string,
@@ -63,9 +67,19 @@ export const DEFAULT_BOOK_ID = 'cell-church-larry-stockstill';
 
 export class SqliteBookRepository implements IBookRepository {
   private db: DatabaseSync;
+  private storage: IStorageService;
+  private isDefaultDb: boolean;
 
-  constructor(db?: DatabaseSync) {
+  constructor(db?: DatabaseSync, storage?: IStorageService) {
+    this.isDefaultDb = !db;
     this.db = db || getDatabase();
+    this.storage = storage || getStorageService();
+  }
+
+  private triggerRemoteDbSync(): void {
+    if (this.isDefaultDb) {
+      void this.storage.syncDatabaseToGcs(DEFAULT_DB_PATH);
+    }
   }
 
   public seedDefaultBookIfNeeded(): void {
@@ -102,6 +116,13 @@ export class SqliteBookRepository implements IBookRepository {
     if (fs.existsSync(defaultCoverSource) && !fs.existsSync(targetCoverPath)) {
       fs.copyFileSync(defaultCoverSource, targetCoverPath);
     }
+
+    void this.storage.ensureDefaultAssetsInStorage(
+      defaultPdfSource,
+      defaultPdfFilename,
+      defaultCoverSource,
+      defaultCoverFilename
+    );
 
     if (!existing) {
       this.createBook({
@@ -236,6 +257,20 @@ export class SqliteBookRepository implements IBookRepository {
     };
   }
 
+  public getCoverFilename(idOrSlug: string): string | null {
+    const row = this.db
+      .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
+      .get(idOrSlug, idOrSlug) as Record<string, any> | undefined;
+
+    if (row?.cover_image_filename) {
+      return String(row.cover_image_filename);
+    }
+    if (idOrSlug === DEFAULT_BOOK_ID || row?.id === DEFAULT_BOOK_ID) {
+      return `${DEFAULT_BOOK_ID}_cover.png`;
+    }
+    return null;
+  }
+
   public getCoverImagePath(idOrSlug: string): string | null {
     const row = this.db
       .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
@@ -262,6 +297,19 @@ export class SqliteBookRepository implements IBookRepository {
     }
 
     return null;
+  }
+
+  public getPdfMetadata(idOrSlug: string): { filename: string; downloadName: string } | null {
+    const row = this.db
+      .prepare('SELECT pdf_filename, original_pdf_name, slug FROM books WHERE id = ? OR slug = ?')
+      .get(idOrSlug, idOrSlug) as Record<string, any> | undefined;
+
+    if (!row || !row.pdf_filename) return null;
+
+    return {
+      filename: String(row.pdf_filename),
+      downloadName: String(row.original_pdf_name || `${row.slug}.pdf`),
+    };
   }
 
   public getPdfFilePath(idOrSlug: string): { filePath: string; downloadName: string } | null {
@@ -332,6 +380,7 @@ export class SqliteBookRepository implements IBookRepository {
       now
     );
 
+    this.triggerRemoteDbSync();
     return this.getBookByIdOrSlug(input.id)!;
   }
 
@@ -350,6 +399,7 @@ export class SqliteBookRepository implements IBookRepository {
          WHERE id = ?`
       )
       .run(status, progress, percent, errorMessage, now, id);
+    this.triggerRemoteDbSync();
   }
 
   public updateBookContent(
@@ -420,6 +470,7 @@ export class SqliteBookRepository implements IBookRepository {
         id
       );
 
+    this.triggerRemoteDbSync();
     return this.getBookByIdOrSlug(id);
   }
 
@@ -428,11 +479,15 @@ export class SqliteBookRepository implements IBookRepository {
       throw new Error('O livro padrão da biblioteca não pode ser removido.');
     }
 
+    const pdfMeta = this.getPdfMetadata(id);
+    const coverFilename = this.getCoverFilename(id);
     const pdfInfo = this.getPdfFilePath(id);
     const coverPath = this.getCoverImagePath(id);
     const result = this.db.prepare('DELETE FROM books WHERE id = ?').run(id);
 
-    if (pdfInfo && pdfInfo.filePath.startsWith(PDF_STORAGE_DIR) && fs.existsSync(pdfInfo.filePath)) {
+    if (pdfMeta?.filename) {
+      void this.storage.deletePdf(pdfMeta.filename);
+    } else if (pdfInfo && pdfInfo.filePath.startsWith(PDF_STORAGE_DIR) && fs.existsSync(pdfInfo.filePath)) {
       try {
         fs.unlinkSync(pdfInfo.filePath);
       } catch {
@@ -440,7 +495,9 @@ export class SqliteBookRepository implements IBookRepository {
       }
     }
 
-    if (coverPath && coverPath.startsWith(COVER_STORAGE_DIR) && fs.existsSync(coverPath)) {
+    if (coverFilename) {
+      void this.storage.deleteCover(coverFilename);
+    } else if (coverPath && coverPath.startsWith(COVER_STORAGE_DIR) && fs.existsSync(coverPath)) {
       try {
         fs.unlinkSync(coverPath);
       } catch {
@@ -448,6 +505,7 @@ export class SqliteBookRepository implements IBookRepository {
       }
     }
 
+    this.triggerRemoteDbSync();
     return result.changes > 0;
   }
 
@@ -467,5 +525,6 @@ export class SqliteBookRepository implements IBookRepository {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       )
       .run(key, value, now);
+    this.triggerRemoteDbSync();
   }
 }

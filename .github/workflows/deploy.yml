@@ -1,0 +1,65 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: renovada-app-br
+  SERVICE_NAME: livros-renovada-app-br
+  REGION: us-central1
+  AR_REPO_NAME: cloud-run-source-deploy
+  GCS_BUCKET: livros-renovada-app-br
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev
+
+      - name: Build Docker Image
+        run: docker build --pull -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+
+      - name: Push Docker Image
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          flags: |
+            --cpu=1
+            --memory=1Gi
+            --concurrency=80
+            --timeout=300
+            --allow-unauthenticated
+          env_vars: |
+            NODE_ENV=production
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            GCS_BUCKET=${{ env.GCS_BUCKET }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+
+      - name: Exibir URL do Cloud Run
+        run: echo "Service URL: ${{ steps.deploy.outputs.url }}"

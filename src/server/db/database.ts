@@ -10,6 +10,7 @@ export const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 export const STORAGE_DIR = path.join(PROJECT_ROOT, 'storage');
 export const PDF_STORAGE_DIR = path.join(STORAGE_DIR, 'pdfs');
 export const COVER_STORAGE_DIR = path.join(STORAGE_DIR, 'covers');
+export const DEFAULT_DB_PATH = path.join(STORAGE_DIR, 'library.sqlite');
 
 let dbInstance: DatabaseSync | null = null;
 

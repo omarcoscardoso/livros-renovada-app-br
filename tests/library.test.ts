@@ -8,6 +8,7 @@ import {
   SqliteBookRepository,
 } from '../src/server/repositories/bookRepository';
 import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
+import { CloudStorageService, DEFAULT_GCS_BUCKET } from '../src/server/services/storageService';
 import { searchBook, generateStandaloneBookHtml } from '../src/data/bookData';
 
 describe('Biblioteca Digital & Conversor PDF', () => {
@@ -239,5 +240,14 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     } finally {
       if (fs.existsSync(tmpPdf)) fs.unlinkSync(tmpPdf);
     }
+  });
+
+  it('deve configurar o CloudStorageService com o bucket livros-renovada-app-br e expor metadados de capa e PDF', async () => {
+    const storage = new CloudStorageService({ gcsEnabled: false });
+    expect(storage.getBucketName()).toBe(DEFAULT_GCS_BUCKET);
+    expect(repo.getCoverFilename(DEFAULT_BOOK_ID)).toBe(`${DEFAULT_BOOK_ID}_cover.png`);
+    expect(repo.getPdfMetadata(DEFAULT_BOOK_ID)?.filename).toBe(
+      'The_Cell_Church_-_Larry_Stockstill_020021f2.pdf'
+    );
   });
 });
