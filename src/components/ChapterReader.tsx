@@ -530,13 +530,22 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         <div className="space-y-12">
           {(() => {
             let runningParagraphIndex = 0;
-            return chapter.sections.map((section, sIdx) => (
-              <section key={section.id} className="space-y-6">
-                <h2 className="text-lg sm:text-xl font-medium font-editorial tracking-normal pt-2 text-amber-700 dark:text-amber-400">
-                  {section.titlePt}
-                </h2>
+            return chapter.sections.map((section, sIdx) => {
+              const showSectionHeader =
+                Boolean(section.titlePt?.trim()) &&
+                !/^(?:se[çc][ãa]o|section|parte|part|texto integral|full text)\b/i.test(
+                  section.titlePt.trim()
+                );
 
-                <div className={`space-y-5 ${fontFamily === 'sans' ? 'font-sans' : 'font-editorial'}`}>
+              return (
+                <section key={section.id} className="space-y-6">
+                  {showSectionHeader && (
+                    <h2 className="text-lg sm:text-xl font-medium font-editorial tracking-normal pt-2 text-amber-700 dark:text-amber-400">
+                      {section.titlePt}
+                    </h2>
+                  )}
+
+                  <div className={`space-y-5 ${fontFamily === 'sans' ? 'font-sans' : 'font-editorial'}`}>
                   {section.paragraphsPt.map((para, pIdx) => {
                     const enPara = section.paragraphsEn?.[pIdx];
                     const globalIdx = runningParagraphIndex++;
@@ -594,9 +603,10 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                   })}
                 </div>
               </section>
-            ));
-          })()}
-        </div>
+            );
+          });
+        })()}
+      </div>
 
         {/* Perguntas de Reflexão da Liderança */}
         {chapter.studyQuestionsPt && chapter.studyQuestionsPt.length > 0 && (

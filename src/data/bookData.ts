@@ -507,7 +507,6 @@ export function generateStandaloneBookHtml(
       \`;
 
       ch.sections.forEach(sec => {
-        html += \`<h2 class="section-title">\${sec.titlePt}</h2>\`;
         sec.paragraphsPt.forEach(p => {
           html += \`<p>\${p}</p>\`;
         });
@@ -550,7 +549,6 @@ export function generateStandaloneBookHtml(
         \`;
 
         ch.sections.forEach(sec => {
-          printHtml += \`<h3 style="font-size: 16px; margin: 24px 0 10px;">\${sec.titlePt}</h3>\`;
           sec.paragraphsPt.forEach(p => {
             printHtml += \`<p style="margin-bottom: 12px; font-size: 13px; line-height: 1.6;">\${p}</p>\`;
           });

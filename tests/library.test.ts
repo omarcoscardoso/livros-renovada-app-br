@@ -150,6 +150,9 @@ describe('Biblioteca Digital & Conversor PDF', () => {
 
     const html = generateStandaloneBookHtml(structured, structured.chapters);
     expect(html).toContain('A Visão Celular Contemporânea');
+    // Regra 1: Na versão HTML não deve incluir "seções", o texto é direto em parágrafos do capítulo
+    expect(html).not.toContain('<h2 class="section-title">');
+    expect(html).toContain('A igreja primitiva reunia-se no templo e de casa em casa.');
   });
 
   it('deve isolar o Sumário e identificar Dedicatória e Introdução antes dos capítulos', () => {
@@ -214,6 +217,75 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(structured.chapters[3].id).toBe('chapter-2');
     expect(structured.chapters[3].number).toBe(2);
     expect(structured.chapters[3].titlePt).toContain('O Avanço');
+  });
+
+  it('deve validar "Capítulo" e "Prefácio" como delimitadores de texto e não incluir seções no HTML', () => {
+    const extractor = new PdfExtractorService();
+    const pdfData = {
+      totalPages: 5,
+      pages: [
+        // Página 1: Prefácio (delimitador)
+        'PREFÁCIO: Por Larry Stockstill\n\nEste livro foi gerado no calor da oração e da comunhão pastoral.\n\nEspero que cada página fortaleça sua fé.',
+        // Página 2: Continuação do Prefácio
+        'A visão bíblica de discipulado transforma cidades inteiras quando praticada com perseverança.',
+        // Página 3: Capítulo 1 (delimitador)
+        'CAPÍTULO 1: O Começo da Visão\n\nNo primeiro ano do ministério, compreendemos que o templo não era o destino final, mas o ponto de partida.\n\nCada casa abriga uma comunidade viva.',
+        // Página 4: Continuação do Capítulo 1
+        'Assim como os primeiros cristãos em Jerusalém, compartilhávamos o pão com júbilo e singeleza de coração.',
+        // Página 5: Capítulo 2 (delimitador)
+        'Capítulo 2: O Multiplicador de Líderes\n\nO crescimento saudável decorre de pais espirituais formando novos pais espirituais.',
+      ],
+      fullText: 'Texto simulado com delimitadores',
+    };
+
+    const structured = extractor.buildStructuredBookFromPages(pdfData, 'livro_delimitadores.pdf', {
+      titlePt: 'Princípios da Visão',
+      author: 'Larry Stockstill',
+    });
+
+    // 1. Deve ter 3 unidades delimitadas: Prefácio, Capítulo 1 e Capítulo 2
+    expect(structured.chapters.length).toBe(3);
+
+    // 2. Prefácio delimitado (páginas 1 a 2)
+    const preface = structured.chapters[0];
+    expect(preface.id).toBe('preface');
+    expect(preface.number).toBe(0);
+    expect(preface.titlePt).toContain('Prefácio');
+    expect(preface.pages).toBe('1-2');
+    expect(preface.sections.length).toBe(1);
+    expect(preface.sections[0].titlePt).toBe(''); // Sem seções artificiais
+    expect(preface.sections[0].paragraphsPt.join(' ')).toContain('Este livro foi gerado no calor da oração');
+    expect(preface.sections[0].paragraphsPt.join(' ')).toContain('A visão bíblica de discipulado transforma');
+
+    // 3. Capítulo 1 delimitado (páginas 3 a 4)
+    const ch1 = structured.chapters[1];
+    expect(ch1.id).toBe('chapter-1');
+    expect(ch1.number).toBe(1);
+    expect(ch1.titlePt).toContain('O Começo da Visão');
+    expect(ch1.pages).toBe('3-4');
+    expect(ch1.sections.length).toBe(1);
+    expect(ch1.sections[0].titlePt).toBe(''); // Sem seções artificiais
+    expect(ch1.sections[0].paragraphsPt.join(' ')).toContain('No primeiro ano do ministério');
+    expect(ch1.sections[0].paragraphsPt.join(' ')).toContain('Assim como os primeiros cristãos');
+
+    // 4. Capítulo 2 delimitado (página 5)
+    const ch2 = structured.chapters[2];
+    expect(ch2.id).toBe('chapter-2');
+    expect(ch2.number).toBe(2);
+    expect(ch2.titlePt).toContain('O Multiplicador de Líderes');
+    expect(ch2.pages).toBe('5');
+    expect(ch2.sections.length).toBe(1);
+    expect(ch2.sections[0].titlePt).toBe('');
+    expect(ch2.sections[0].paragraphsPt.join(' ')).toContain('O crescimento saudável decorre de pais espirituais');
+
+    // 5. Geração de HTML standalone: não deve conter títulos de "seções", o texto do capítulo é direto
+    const standaloneHtml = generateStandaloneBookHtml(structured, structured.chapters);
+    expect(standaloneHtml).not.toContain('<h2 class="section-title">');
+    expect(standaloneHtml).not.toContain('class="section-title"');
+    expect(standaloneHtml).toContain('Princípios da Visão');
+    expect(standaloneHtml).toContain('O Começo da Visão');
+    expect(standaloneHtml).toContain('No primeiro ano do ministério');
+    expect(standaloneHtml).toContain('Assim como os primeiros cristãos');
   });
 
   it('deve extrair texto real de um buffer PDF válido usando PdfExtractorService em memória', async () => {

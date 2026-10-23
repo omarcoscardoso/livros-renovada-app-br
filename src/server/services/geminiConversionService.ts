@@ -119,16 +119,16 @@ const CHAPTER_CONTENT_JSON_SCHEMA = {
     },
     sections: {
       type: 'array',
-      description: 'Seções completas que compõem o texto integral do capítulo em Português do Brasil.',
+      description: 'Texto do capítulo em parágrafos contínuos em Português do Brasil.',
       items: {
         type: 'object',
         properties: {
-          titlePt: { type: 'string', description: 'Título da seção em Português do Brasil.' },
-          titleEn: { type: 'string', description: 'Título original da seção.' },
+          titlePt: { type: 'string', description: 'Deixe vazio ("") - não use subtítulos de seção artificiais.' },
+          titleEn: { type: 'string', description: 'Título original (ou vazio).' },
           paragraphsPt: {
             type: 'array',
             description:
-              'Parágrafos completos e fiéis ao texto original, traduzidos/redigidos em Português do Brasil de alta qualidade editorial.',
+              'Parágrafos completos e fiéis ao texto original, transcritos em Português do Brasil com fidelidade ao PDF.',
             items: { type: 'string' },
           },
           paragraphsEn: {
@@ -137,7 +137,7 @@ const CHAPTER_CONTENT_JSON_SCHEMA = {
             items: { type: 'string' },
           },
         },
-        required: ['titlePt', 'paragraphsPt'],
+        required: ['paragraphsPt'],
       },
     },
   },
@@ -348,17 +348,18 @@ export class GeminiConversionService {
     const outlinePrompt = `Você é um arquiteto especialista em conservação e estruturação editorial de livros em PDF.
 Analise as páginas extraídas deste livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor absoluto, reproduzindo com fidelidade a ordem e a organização do livro físico original:
 
-1. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
+1. REGRAS DE DELIMITADORES RÍGIDOS (PREFÁCIO E CAPÍTULO):
+   - DELIMITADOR PREFÁCIO: Quando existir a palavra 'Prefácio' (ou 'Preface', 'Prólogo'), use como delimitador estrito de texto preliminar antes do Capítulo 1 (type: "preface", number: 0). O prefácio inicia na ocorrência do delimitador e termina exatamente onde o Capítulo 1 começar.
+   - DELIMITADOR CAPÍTULO: Durante a conversão, valide expressamente se existe a expressão 'Capítulo' (ou 'Capitulo', 'Chapter', ex.: Capítulo 1, Capítulo 2, CAPÍTULO I...) para identificar onde começa e onde termina cada capítulo do livro. Cada ocorrência da expressão delimita com exatidão o início do novo capítulo e o término do capítulo anterior.
+   - Delimitador Introdução: Se existir antes dos capítulos uma seção explícita de Introdução, mapeie como type: "intro", number: 0.
+
+2. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
    - Localize exatamente em quais páginas está o Sumário ou Índice do livro (geralmente entre as páginas 3 e 12).
    - Preencha "tableOfContentsPages" com a lista de páginas do Sumário (ex.: [3, 4]).
-   - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como índice de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar APÓS o Sumário (ou após a introdução).
-
-2. SEÇÕES PRELIMINARES (FRONT MATTER):
-   - Dedicatória / Agradecimentos: Se o livro contiver Dedicatória (Dedication) ou Agradecimentos (Acknowledgments), crie uma seção separada com type: "dedication" e number: 0, antes de qualquer capítulo.
-   - Prefácio / Prólogo / Introdução: Se o livro contiver Prefácio (Preface/Foreword), Prólogo (Prologue) ou Introdução (Introduction), crie uma seção separada com type: "preface" ou type: "intro" e number: 0, antes de iniciar o Capítulo 1.
+   - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como índice de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar APÓS o Sumário (ou após o prefácio/introdução).
 
 3. CAPÍTULOS PRINCIPAIS DO LIVRO (EXATIDÃO DA ESTRUTURA):
-   - Mapeie cada capítulo (Capítulo 1, 2, ... N) respeitando rigorosamente a divisão e os títulos originais do livro.
+   - Mapeie cada capítulo respeitando a divisão delimitada pela expressão 'Capítulo'.
    - Para cada capítulo, determine com precisão a página onde ele realmente começa (startPage) e onde termina (endPage).
    - Se houver Apêndices ou Conclusão ao final, adicione-os com type: "appendix" ou type: "conclusion".
    - Assegure que nenhum capítulo comece antes do término do Sumário.
@@ -467,9 +468,9 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
    - NÃO faça adaptações ou conversões de textos bíblicos: mantenha as citações, versículos e referências bíblicas EXATAMENTE como constam no PDF original.
    - Se o livro estiver em outro idioma e precisar de tradução para o Português, traduza mantendo fidelidade estrita ao sentido original, sem alterar o estilo ou encurtar o texto.
 
-2. ESTRUTURAÇÃO EM SEÇÕES E PARÁGRAFOS LÓGICOS:
-   - Divida o texto em seções lógicas baseadas nos subtítulos e tópicos do próprio capítulo do livro.
-   - Cada seção deve conter os parágrafos completos e densos extraídos das páginas (paragraphsPt).
+2. TRANSCRIÇÃO DIRETA EM PARÁGRAFOS CONTÍNUOS (SEM SEÇÕES):
+   - O livro é organizado em capítulos. NÃO crie divisões artificiais em 'seções' (como 'Seção 1', 'Seção 2', 'Parte 1').
+   - Transcreva o texto completo do capítulo diretamente em parágrafos contínuos dentro de paragraphsPt.
    - Remova ruídos residuais de cabeçalhos de corrida repetitivos ou números de página soltos que possam ter ficado no texto.
    - NUNCA inclua partes de sumário, índices de outros capítulos ou notas de rodapé perdidas.
 
@@ -516,19 +517,36 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
           chId = `appendix-${chNumber}`;
         }
 
-        const sections = (Array.isArray(chData.sections) ? chData.sections : []).map(
-          (sec: any, sIdx: number) => ({
-            id: `${chId}-sec-${sIdx + 1}`,
-            titlePt: String(sec.titlePt || `Seção ${sIdx + 1}`),
-            titleEn: String(sec.titleEn || sec.titlePt || `Section ${sIdx + 1}`),
-            paragraphsPt: Array.isArray(sec.paragraphsPt)
-              ? sec.paragraphsPt.map(String)
-              : [String(sec.paragraphsPt || '')],
-            paragraphsEn: Array.isArray(sec.paragraphsEn)
-              ? sec.paragraphsEn.map(String)
-              : [],
-          })
-        );
+        const rawSections = Array.isArray(chData.sections) ? chData.sections : [];
+        const allParagraphsPt: string[] = [];
+        const allParagraphsEn: string[] = [];
+
+        for (const sec of rawSections) {
+          if (Array.isArray(sec.paragraphsPt)) {
+            allParagraphsPt.push(...sec.paragraphsPt.map(String));
+          } else if (sec.paragraphsPt) {
+            allParagraphsPt.push(String(sec.paragraphsPt));
+          }
+          if (Array.isArray(sec.paragraphsEn)) {
+            allParagraphsEn.push(...sec.paragraphsEn.map(String));
+          } else if (sec.paragraphsEn) {
+            allParagraphsEn.push(String(sec.paragraphsEn));
+          }
+        }
+
+        // Regra 1: Não inclua seções na conversão quando o livro for dividido em capítulos
+        const sections = [
+          {
+            id: `${chId}-sec-1`,
+            titlePt: '',
+            titleEn: '',
+            paragraphsPt:
+              allParagraphsPt.length > 0
+                ? allParagraphsPt
+                : ['Conteúdo transcrito a partir do PDF original.'],
+            paragraphsEn: allParagraphsEn,
+          },
+        ];
 
         chapters.push({
           id: chId,
