@@ -13,6 +13,7 @@ import {
 import { generateStandaloneBookHtml } from '../data/bookData';
 import { BookInfo, Chapter } from '../data/bookTypes';
 import { generateBookPdf } from '../utils/pdfGenerator';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   book: BookInfo;
@@ -46,8 +47,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
   totalBooksCount,
 }) => {
+  const { user, openLoginModal } = useAuth();
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [pdfProgress, setPdfProgress] = useState('');
+
+  const handleEditWithAuth = () => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para editar os capítulos e metadados deste livro.');
+      return;
+    }
+    onOpenEditor();
+    onClose();
+  };
+
+  const handleUploadWithAuth = () => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para adicionar novos livros em PDF.');
+      return;
+    }
+    onOpenUpload();
+    onClose();
+  };
 
   const downloadSingleHtml = () => {
     const html = generateStandaloneBookHtml(book, chapters);
@@ -116,18 +136,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={() => {
-                onOpenEditor();
-                onClose();
-              }}
-              className="p-1.5 rounded-md text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
+              onClick={handleEditWithAuth}
+              className="p-1.5 rounded-md text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors cursor-pointer"
               title="Editar metadados e capítulos deste livro"
             >
               <Edit3 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-200 lg:hidden"
+              className="p-1 rounded-md text-slate-400 hover:text-slate-200 lg:hidden cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -142,18 +159,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onOpenLibrary();
                 onClose();
               }}
-              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors border border-slate-700"
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors border border-slate-700 cursor-pointer"
             >
               <Library className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span className="truncate">Estante ({totalBooksCount})</span>
             </button>
 
             <button
-              onClick={() => {
-                onOpenUpload();
-                onClose();
-              }}
-              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-semibold transition-colors border border-emerald-500/30"
+              onClick={handleUploadWithAuth}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-semibold transition-colors border border-emerald-500/30 cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="truncate">Subir PDF</span>

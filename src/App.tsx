@@ -17,6 +17,9 @@ import { PdfViewerModal } from './components/PdfViewerModal';
 import { BookshelfView } from './components/BookshelfView';
 import { UploadBookModal } from './components/UploadBookModal';
 import { BookEditorModal } from './components/BookEditorModal';
+import { LoginModal } from './components/LoginModal';
+import { AdminModal } from './components/AdminModal';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Loader2, Check } from 'lucide-react';
 
 const DEFAULT_BOOK_ID = 'cell-church-larry-stockstill';
@@ -60,7 +63,13 @@ const FALLBACK_DEFAULT_SUMMARY: BookSummary = {
   updatedAt: FALLBACK_DEFAULT_BOOK.updatedAt,
 };
 
-export default function App() {
+function LibraryApp({
+  onRegisterProgressLoaded,
+}: {
+  onRegisterProgressLoaded: (fn: (remoteMap: ReadChaptersMap) => void) => void;
+}) {
+  const { user, openLoginModal, syncReadingProgressToAccount } = useAuth();
+
   // Initial view is the virtual Bookshelf ("estante")
   const [currentView, setCurrentView] = useState<'bookshelf' | 'reader'>('bookshelf');
 
@@ -123,8 +132,24 @@ export default function App() {
   );
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [editingBook, setEditingBook] = useState<StoredBook | null>(null);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
+
+  // Sync remote progress when received from user account
+  useEffect(() => {
+    onRegisterProgressLoaded((remoteMap: ReadChaptersMap) => {
+      setReadChaptersMap((prev) => {
+        const merged = { ...prev };
+        for (const [bookId, chapters] of Object.entries(remoteMap)) {
+          const local = merged[bookId] || [];
+          const combined = Array.from(new Set([...local, ...chapters]));
+          merged[bookId] = combined;
+        }
+        return merged;
+      });
+    });
+  }, [onRegisterProgressLoaded]);
 
   const readChaptersForActiveBook = readChaptersMap[activeBook.id] || [];
 
@@ -135,11 +160,22 @@ export default function App() {
       ...prev,
       [activeBook.id]: updatedList,
     }));
+
+    // Requirement 3c: Persist progress in user account if logged in
+    if (user) {
+      syncReadingProgressToAccount(activeBook.id, currentChapterId, updatedList);
+    }
   };
 
   const handleSelectChapter = (chapterId: string) => {
     setCurrentChapterId(chapterId);
     saveBookLastVisitedChapter(activeBook.id, chapterId);
+
+    // Requirement 3c: Save last visited chapter to user account
+    if (user) {
+      const currentRead = readChaptersMap[activeBook.id] || [];
+      syncReadingProgressToAccount(activeBook.id, chapterId, currentRead);
+    }
   };
 
   const fetchLibrary = useCallback(async () => {
@@ -210,7 +246,19 @@ export default function App() {
     }
   };
 
+  const handleOpenUpload = () => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para adicionar novos livros em PDF à biblioteca.');
+      return;
+    }
+    setIsUploadOpen(true);
+  };
+
   const handleOpenEditBook = async (bookId: string) => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para editar os capítulos e metadados deste livro.');
+      return;
+    }
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
       if (!res.ok) return;
@@ -224,6 +272,10 @@ export default function App() {
   };
 
   const handleDeleteBook = async (bookId: string) => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para gerenciar livros da biblioteca.');
+      return;
+    }
     if (!window.confirm('Tem certeza que deseja remover este livro da estante?')) return;
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`, {
@@ -245,6 +297,10 @@ export default function App() {
   };
 
   const handleReprocessBook = async (bookId: string) => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para reprocessar livros.');
+      return;
+    }
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/reprocess`, {
         method: 'POST',
@@ -355,7 +411,7 @@ export default function App() {
           theme={theme}
           onChangeTheme={handleChangeTheme}
           onSelectBook={handleSelectBook}
-          onOpenUpload={() => setIsUploadOpen(true)}
+          onOpenUpload={handleOpenUpload}
           onOpenPdfForBook={(bookId) => {
             const found = booksList.find((b) => b.id === bookId) || activeBook;
             setPdfTargetBook(found);
@@ -364,6 +420,7 @@ export default function App() {
           onEditBook={(bookId) => handleOpenEditBook(bookId)}
           onDeleteBook={handleDeleteBook}
           onReprocessBook={handleReprocessBook}
+          onOpenAdmin={() => setIsAdminModalOpen(true)}
         />
       ) : (
         <>
@@ -380,7 +437,7 @@ export default function App() {
               setIsPdfOpen(true);
             }}
             onOpenLibrary={() => setCurrentView('bookshelf')}
-            onOpenUpload={() => setIsUploadOpen(true)}
+            onOpenUpload={handleOpenUpload}
             onOpenEditor={() => setEditingBook(activeBook)}
             readChapters={readChaptersForActiveBook}
             isOpen={isSidebarOpen}
@@ -399,7 +456,8 @@ export default function App() {
               }}
               onPrintPdf={handleDownloadPdf}
               onOpenLibrary={() => setCurrentView('bookshelf')}
-              onOpenUpload={() => setIsUploadOpen(true)}
+              onOpenUpload={handleOpenUpload}
+              onOpenAdmin={() => setIsAdminModalOpen(true)}
               theme={theme}
               onChangeTheme={handleChangeTheme}
               fontSize={fontSize}
@@ -525,6 +583,51 @@ export default function App() {
           fetchLibrary();
         }}
       />
+
+      {/* Google Login Modal (Requirement 3 & 5) */}
+      <LoginModal theme={theme} />
+
+      {/* Admin Panel Modal (Requirement 4) */}
+      <AdminModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        books={booksList}
+        onRefreshLibrary={fetchLibrary}
+        onEditBook={(bookId) => handleOpenEditBook(bookId)}
+        onDeleteBook={(bookId) => handleDeleteBook(bookId)}
+        onReprocessBook={(bookId) => handleReprocessBook(bookId)}
+        onOpenPdfForBook={(bookId) => {
+          const found = booksList.find((b) => b.id === bookId) || activeBook;
+          setPdfTargetBook(found);
+          setIsPdfOpen(true);
+        }}
+        theme={theme}
+      />
     </div>
+  );
+}
+
+export default function App() {
+  const [progressLoadedCallback, setProgressLoadedCallback] = useState<
+    ((remoteMap: ReadChaptersMap) => void) | null
+  >(null);
+
+  const handleRegisterProgressLoaded = useCallback(
+    (fn: (remoteMap: ReadChaptersMap) => void) => {
+      setProgressLoadedCallback(() => fn);
+    },
+    []
+  );
+
+  return (
+    <AuthProvider
+      onProgressLoaded={(map) => {
+        if (progressLoadedCallback) {
+          progressLoadedCallback(map);
+        }
+      }}
+    >
+      <LibraryApp onRegisterProgressLoaded={handleRegisterProgressLoaded} />
+    </AuthProvider>
   );
 }

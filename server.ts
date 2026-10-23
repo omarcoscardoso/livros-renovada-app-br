@@ -3,12 +3,18 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import { DEFAULT_DB_PATH } from './src/server/db/database';
 import {
   DEFAULT_BOOK_ID,
   IBookRepository,
   SqliteBookRepository,
 } from './src/server/repositories/bookRepository';
+import {
+  IUserRepository,
+  SqliteUserRepository,
+} from './src/server/repositories/userRepository';
+import { createAuthMiddleware } from './src/server/middleware/authMiddleware';
 import { PdfExtractorService } from './src/server/services/pdfExtractorService';
 import { GeminiConversionService } from './src/server/services/geminiConversionService';
 import {
@@ -17,6 +23,8 @@ import {
 } from './src/server/services/storageService';
 import { createBookRouter } from './src/server/routes/bookRoutes';
 import { createAiRouter } from './src/server/routes/aiRoutes';
+import { createAuthRouter } from './src/server/routes/authRoutes';
+import { createAdminRouter } from './src/server/routes/adminRoutes';
 
 dotenv.config();
 
@@ -28,17 +36,23 @@ const PORT = Number(process.env.PORT) || 3000;
 
 export function createApiApp(
   customRepo?: IBookRepository,
-  customStorage?: IStorageService
+  customStorage?: IStorageService,
+  customUserRepo?: IUserRepository
 ) {
   const storageService = customStorage || getStorageService();
   const repo = customRepo || new SqliteBookRepository(undefined, storageService);
   repo.seedDefaultBookIfNeeded();
+
+  const userRepo = customUserRepo || new SqliteUserRepository(undefined, storageService);
+  const authMiddleware = createAuthMiddleware(userRepo);
 
   const extractor = new PdfExtractorService(storageService);
   const conversionService = new GeminiConversionService(repo, extractor);
 
   const app = express();
   app.use(express.json({ limit: '25mb' }));
+  app.use(cookieParser());
+  app.use(authMiddleware.attachUser);
 
   // Health & AI Key check endpoint
   app.get('/api/health', (_req, res) => {
@@ -51,28 +65,26 @@ export function createApiApp(
     });
   });
 
-  // Save Gemini API Key from UI Settings
-  app.post('/api/settings/gemini-key', (req, res) => {
-    try {
-      const { apiKey } = req.body;
-      if (typeof apiKey !== 'string' || apiKey.trim().length < 10) {
-        return res.status(400).json({ error: 'Informe uma chave GEMINI_API_KEY válida.' });
-      }
-      repo.setSetting('gemini_api_key', apiKey.trim());
-      return res.json({
-        success: true,
-        hasGeminiKey: Boolean(conversionService.resolveApiKey()),
-      });
-    } catch (error: any) {
-      return res.status(500).json({ error: error?.message || 'Erro ao salvar chave.' });
-    }
-  });
+  // Auth Router (Google Sign-In, Me, Logout, Reading Progress)
+  app.use('/api/auth', createAuthRouter(userRepo));
 
-  // Mount Modular Subrouters (SRP)
+  // Admin Router (Protected by requireAdmin)
+  app.use(
+    '/api/admin',
+    authMiddleware.requireAdmin,
+    createAdminRouter(userRepo, repo, conversionService)
+  );
+
+  // Mount Book Router (Reading is 100% public, Mutations require auth)
   app.use(
     '/api/books',
-    createBookRouter(repo, storageService, conversionService, extractor)
+    createBookRouter(repo, storageService, conversionService, extractor, {
+      requireAuth: authMiddleware.requireAuth,
+      requireAdmin: authMiddleware.requireAdmin,
+    })
   );
+
+  // AI Router
   app.use('/api', createAiRouter(conversionService));
 
   // Backwards-compatible endpoint to download the original PDF of "The Cell Church"

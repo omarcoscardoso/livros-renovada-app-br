@@ -9,7 +9,11 @@ import {
   Printer,
   Library,
   Upload,
+  ShieldAlert,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export type ReaderTheme = 'dark' | 'sepia' | 'light';
 export type FontSize = 'sm' | 'base' | 'lg' | 'xl';
@@ -21,6 +25,7 @@ interface NavbarProps {
   onPrintPdf: () => void;
   onOpenLibrary: () => void;
   onOpenUpload: () => void;
+  onOpenAdmin?: () => void;
   theme: ReaderTheme;
   onChangeTheme: (theme: ReaderTheme) => void;
   fontSize: FontSize;
@@ -38,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onPrintPdf,
   onOpenLibrary,
   onOpenUpload,
+  onOpenAdmin,
   theme,
   onChangeTheme,
   fontSize,
@@ -47,6 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   totalBooksCount,
   hasOriginalPdf,
 }) => {
+  const { user, isAdmin, openLoginModal, logout } = useAuth();
   const isDark = theme === 'dark';
   const isSepia = theme === 'sepia';
 
@@ -68,6 +75,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     ? 'text-[#705e4d] hover:text-[#2c2217]'
     : 'text-slate-500 hover:text-slate-900';
 
+  const handleUploadWithAuth = () => {
+    if (!user) {
+      openLoginModal('Faça login com sua conta Google para adicionar novos livros em PDF.');
+      return;
+    }
+    onOpenUpload();
+  };
+
   return (
     <header
       className={`sticky top-0 z-20 h-12 backdrop-blur-md border-b px-3 sm:px-6 flex items-center justify-between no-print transition-colors ${navBg}`}
@@ -76,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleSidebar}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium shrink-0"
+          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium shrink-0 cursor-pointer"
           title="Índice dos Capítulos"
         >
           <Menu className="w-4 h-4" />
@@ -96,8 +111,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         <button
-          onClick={onOpenUpload}
-          className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0"
+          onClick={handleUploadWithAuth}
+          className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
           title="Subir novo livro em PDF e converter para leitura"
         >
           <Upload className="w-3.5 h-3.5" />
@@ -121,7 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={sz}
               onClick={() => onChangeFontSize(sz)}
-              className={`px-2 py-0.5 rounded transition-colors text-[11px] ${
+              className={`px-2 py-0.5 rounded transition-colors text-[11px] cursor-pointer ${
                 fontSize === sz ? pillActive : pillInactive
               }`}
             >
@@ -134,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center rounded-lg border border-black/10 dark:border-white/10 p-0.5">
           <button
             onClick={() => onChangeTheme('light')}
-            className={`p-1 rounded transition-colors ${
+            className={`p-1 rounded transition-colors cursor-pointer ${
               theme === 'light' ? pillActive : pillInactive
             }`}
             title="Modo Claro"
@@ -143,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => onChangeTheme('sepia')}
-            className={`p-1 rounded transition-colors ${
+            className={`p-1 rounded transition-colors cursor-pointer ${
               theme === 'sepia' ? pillActive : pillInactive
             }`}
             title="Modo Sépia (Pergaminho)"
@@ -152,7 +167,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => onChangeTheme('dark')}
-            className={`p-1 rounded transition-colors ${
+            className={`p-1 rounded transition-colors cursor-pointer ${
               theme === 'dark' ? pillActive : pillInactive
             }`}
             title="Modo Escuro"
@@ -165,7 +180,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {hasOriginalPdf && (
           <button
             onClick={onOpenPdf}
-            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
             title="Ver / Baixar PDF Original"
           >
             <FileText className="w-3.5 h-3.5 opacity-80 hover:opacity-100 text-rose-400" />
@@ -175,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Save translated/structured PDF button */}
         <button
           onClick={onPrintPdf}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
           title="Baixar Livro Completo Estruturado em PDF (.pdf)"
         >
           <Printer className="w-3.5 h-3.5 opacity-80 hover:opacity-100 text-amber-500" />
@@ -184,11 +199,59 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Search */}
         <button
           onClick={onOpenSearch}
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
           title="Pesquisar no livro (Ctrl+K)"
         >
           <Search className="w-3.5 h-3.5 opacity-80 hover:opacity-100" />
         </button>
+
+        {/* Admin Button */}
+        {isAdmin && onOpenAdmin && (
+          <button
+            onClick={onOpenAdmin}
+            className="p-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-600 dark:text-purple-300 border border-purple-500/30 transition-colors cursor-pointer"
+            title="Painel de Administração"
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {/* Google User Avatar / Login */}
+        {user ? (
+          <div className="flex items-center gap-1.5 pl-1">
+            {user.picture ? (
+              <img
+                src={user.picture}
+                alt={user.name}
+                className="w-6 h-6 rounded-full border border-amber-500/40"
+                title={`${user.name} (${user.email})`}
+              />
+            ) : (
+              <div
+                className="w-6 h-6 rounded-full bg-slate-700 text-amber-400 flex items-center justify-center font-bold text-[10px]"
+                title={`${user.name} (${user.email})`}
+              >
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <button
+              onClick={() => logout()}
+              className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+              title="Sair da conta Google"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => openLoginModal()}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer"
+            title="Fazer Login com Google"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Entrar</span>
+          </button>
+        )}
       </div>
     </header>
   );

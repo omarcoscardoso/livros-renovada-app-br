@@ -38,11 +38,17 @@ export function createBookRouter(
   repo: IBookRepository,
   storageService: IStorageService,
   conversionService: GeminiConversionService,
-  extractor: PdfExtractorService
+  extractor: PdfExtractorService,
+  auth?: {
+    requireAuth: (req: any, res: any, next: any) => void;
+    requireAdmin: (req: any, res: any, next: any) => void;
+  }
 ): Router {
   const router = Router();
+  const requireAuth = auth?.requireAuth || ((_req, _res, next) => next());
+  const requireAdmin = auth?.requireAdmin || ((_req, _res, next) => next());
 
-  // List all books
+  // List all books (Public - No login required)
   router.get('/', (_req, res) => {
     try {
       const books = repo.listBooks();
@@ -70,8 +76,8 @@ export function createBookRouter(
     }
   });
 
-  // Upload new PDF book
-  router.post('/upload', upload.single('pdf'), async (req, res) => {
+  // Upload new PDF book (Requires Authentication)
+  router.post('/upload', requireAuth, upload.single('pdf'), async (req, res) => {
     try {
       const file = req.file;
       if (!file) {
@@ -178,8 +184,8 @@ export function createBookRouter(
     }
   });
 
-  // Reprocess an existing book
-  router.post('/:id/reprocess', async (req, res) => {
+  // Reprocess an existing book (Requires Authentication)
+  router.post('/:id/reprocess', requireAuth, async (req, res) => {
     try {
       const book = repo.getBookByIdOrSlug(req.params.id);
       if (!book) {
@@ -235,8 +241,8 @@ export function createBookRouter(
     }
   });
 
-  // Update book
-  router.put('/:id', (req, res) => {
+  // Update book (Requires Authentication)
+  router.put('/:id', requireAuth, (req, res) => {
     try {
       const existing = repo.getBookByIdOrSlug(req.params.id);
       if (!existing) {
@@ -275,8 +281,8 @@ export function createBookRouter(
     }
   });
 
-  // Delete book
-  router.delete('/:id', (req, res) => {
+  // Delete book (Requires Admin)
+  router.delete('/:id', requireAdmin, (req, res) => {
     try {
       const existing = repo.getBookByIdOrSlug(req.params.id);
       if (!existing) {
@@ -321,8 +327,8 @@ export function createBookRouter(
     }
   });
 
-  // Change cover page
-  router.post('/:id/cover-page', async (req, res) => {
+  // Change cover page (Requires Authentication)
+  router.post('/:id/cover-page', requireAuth, async (req, res) => {
     try {
       const book = repo.getBookByIdOrSlug(req.params.id);
       if (!book) {
