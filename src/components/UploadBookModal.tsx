@@ -50,6 +50,10 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
   const [convertingBook, setConvertingBook] = useState<StoredBook | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // AI-assisted metadata extraction state
+  const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
+  const [metadataExtracted, setMetadataExtracted] = useState<boolean>(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -61,6 +65,8 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
       setError(null);
       setIsUploading(false);
       setConvertingBook(null);
+      setIsExtractingMetadata(false);
+      setMetadataExtracted(false);
     }
   }, [isOpen]);
 
@@ -93,6 +99,45 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleAutoFillWithAi = async (fileToUse?: File) => {
+    const file = fileToUse || selectedFile;
+    if (!file) return;
+
+    setIsExtractingMetadata(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('pdf', file);
+      if (apiKeyInput.trim()) {
+        formData.append('apiKey', apiKeyInput.trim());
+      }
+
+      const res = await fetch('/api/books/extract-metadata', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao analisar PDF com IA.');
+      }
+
+      if (data.metadata) {
+        if (data.metadata.titlePt) setTitlePt(data.metadata.titlePt);
+        if (data.metadata.author) setAuthor(data.metadata.author);
+        if (data.metadata.originalYear) setOriginalYear(data.metadata.originalYear);
+        if (data.metadata.publisher) setPublisher(data.metadata.publisher);
+        if (data.metadata.synopsis) setCustomInstructions(data.metadata.synopsis);
+        setMetadataExtracted(true);
+      }
+    } catch (err: any) {
+      console.warn('Extração de metadados com IA:', err);
+      // Don't block upload if metadata extraction fails
+    } finally {
+      setIsExtractingMetadata(false);
+    }
+  };
+
   const handleFileChange = (file: File | null) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
@@ -101,6 +146,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
     }
     setError(null);
     setSelectedFile(file);
+    setMetadataExtracted(false);
     if (!titlePt.trim()) {
       const cleanName = file.name
         .replace(/\.pdf$/i, '')
@@ -109,6 +155,9 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
         .trim();
       setTitlePt(cleanName);
     }
+
+    // Auto-trigger metadata extraction with Gemini AI
+    void handleAutoFillWithAi(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -333,6 +382,47 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
                 </div>
               )}
 
+              {/* AI Metadata Assistant Status / Button */}
+              {selectedFile && (
+                <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-800/60 border border-indigo-500/30 text-xs flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    {isExtractingMetadata ? (
+                      <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                    ) : metadataExtracted ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                    )}
+                    <div>
+                      {isExtractingMetadata ? (
+                        <p className="font-semibold text-amber-300">
+                          IA analisando PDF... Identificando título, autor, ano e sinopse.
+                        </p>
+                      ) : metadataExtracted ? (
+                        <p className="font-semibold text-emerald-300">
+                          Metadados preenchidos por IA a partir do PDF! Você pode revisá-los abaixo.
+                        </p>
+                      ) : (
+                        <p className="font-medium text-slate-300">
+                          Gostaria de preencher os metadados do livro automaticamente com IA?
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {!isExtractingMetadata && (
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFillWithAi()}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{metadataExtracted ? 'Reanalisar com IA' : 'Preencher com IA'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Metadata Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -430,7 +520,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
                   <div className="flex items-center gap-2 text-xs">
                     <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
                     <span className="font-semibold text-slate-200">
-                      Motor de Conversão IA (Gemini 3.8 Flash):
+                      Motor de Conversão IA (Gemini 2.5 Flash):
                     </span>
                     {hasGeminiKey || apiKeyInput.trim().length > 10 ? (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">

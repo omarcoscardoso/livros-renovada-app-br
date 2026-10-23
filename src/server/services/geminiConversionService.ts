@@ -339,27 +339,26 @@ Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Mat
     const outlineInputs: any[] = [];
     if (pdfBase64) {
       outlineInputs.push({
-        type: 'document',
-        data: pdfBase64,
-        mime_type: 'application/pdf',
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: pdfBase64,
+        },
       });
     }
     outlineInputs.push({
-      type: 'text',
       text: `${outlinePrompt}\n\nAmostra das páginas extraídas:\n${samplePagesText.slice(0, 30000)}`,
     });
 
-    const outlineInteraction = await client.interactions.create({
-      model: 'gemini-3.8-flash',
-      input: outlineInputs,
-      response_format: {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: BOOK_OUTLINE_JSON_SCHEMA,
+    const outlineResponse = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: outlineInputs,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: BOOK_OUTLINE_JSON_SCHEMA,
       },
     });
 
-    const outlineJson = JSON.parse(outlineInteraction.output_text || '{}');
+    const outlineJson = JSON.parse(outlineResponse.text || '{}');
     const chapterPlan: Array<{
       number: number;
       titlePt: string;
@@ -412,28 +411,27 @@ Regras obrigatórias:
       const chapterInputs: any[] = [];
       if (!hasSelectableText && pdfBase64) {
         chapterInputs.push({
-          type: 'document',
-          data: pdfBase64,
-          mime_type: 'application/pdf',
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBase64,
+          },
         });
       }
       chapterInputs.push({
-        type: 'text',
         text: `${chapterPrompt}\n\nTexto das páginas ${plan.startPage} a ${plan.endPage}:\n${chapterPagesText.slice(0, 45000)}`,
       });
 
       try {
-        const chInteraction = await client.interactions.create({
-          model: 'gemini-3.8-flash',
-          input: chapterInputs,
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: CHAPTER_CONTENT_JSON_SCHEMA,
+        const chResponse = await client.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: chapterInputs,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: CHAPTER_CONTENT_JSON_SCHEMA,
           },
         });
 
-        const chData = JSON.parse(chInteraction.output_text || '{}');
+        const chData = JSON.parse(chResponse.text || '{}');
         const chNumber = typeof plan.number === 'number' ? plan.number : idx + 1;
         const chId = chNumber === 0 ? 'intro' : `chapter-${chNumber}-${idx}`;
 
@@ -536,13 +534,15 @@ ${params.contextText ? `Trecho de referência: "${params.contextText.slice(0, 20
 Pergunta/Solicitação do leitor:
 ${params.prompt}`;
 
-    const interaction = await client.interactions.create({
-      model: 'gemini-3.8-flash',
-      system_instruction: systemInstruction,
-      input: contents,
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+      },
     });
 
-    return interaction.output_text || 'Não foi possível gerar uma resposta.';
+    return response.text || 'Não foi possível gerar uma resposta.';
   }
 
   public async generateCellLesson(params: {
@@ -578,12 +578,86 @@ Formate em Markdown atraente com Português do Brasil de alto nível.`;
 ${params.chapterSummary ? `Resumo do capítulo: ${params.chapterSummary}\n` : ''}
 Público-alvo: ${params.audience || 'Geral (Jovens e Adultos)'}`;
 
-    const interaction = await client.interactions.create({
-      model: 'gemini-3.8-flash',
-      system_instruction: systemInstruction,
-      input: contents,
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+      },
     });
 
-    return interaction.output_text || 'Não foi possível gerar o roteiro.';
+    return response.text || 'Não foi possível gerar o roteiro.';
+  }
+
+  public async extractMetadataWithAi(
+    pagesText: string,
+    pdfBase64?: string | null,
+    overrideApiKey?: string
+  ): Promise<{
+    titlePt: string;
+    titleEn?: string;
+    subtitlePt?: string;
+    author: string;
+    originalYear: number;
+    publisher?: string;
+    synopsis?: string;
+    category?: string;
+  }> {
+    const client = this.getClient(overrideApiKey);
+    if (!client) {
+      throw new Error('GEMINI_KEY_MISSING');
+    }
+
+    const contents: any[] = [];
+    if (pdfBase64) {
+      contents.push({
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: pdfBase64,
+        },
+      });
+    }
+
+    contents.push({
+      text: `Você é um editor literário experiente e bibliotecário digital.
+Analise a capa, folha de rosto, ficha catalográfica e amostra de páginas deste livro em PDF para identificar e traduzir com máxima fidelidade os metadados da obra para o Português do Brasil:
+- Título principal em Português
+- Título original (se houver)
+- Subtítulo (se houver)
+- Autor(es)
+- Ano original de publicação
+- Editora (publisher)
+- Sinopse (2 a 4 frases cativantes resumindo a mensagem central)
+- Categoria temática principal (ex: Liderança, Células, Discipulado, Teologia, Biografias, Vida Cristã).
+
+Amostra de texto das primeiras páginas:
+${pagesText.slice(0, 15000)}`,
+    });
+
+    const METADATA_EXTRACTION_JSON_SCHEMA = {
+      type: 'object',
+      properties: {
+        titlePt: { type: 'string', description: 'Título em Português do Brasil.' },
+        titleEn: { type: 'string', description: 'Título original ou em inglês.' },
+        subtitlePt: { type: 'string', description: 'Subtítulo da obra em Português.' },
+        author: { type: 'string', description: 'Nome completo do autor ou autores.' },
+        originalYear: { type: 'integer', description: 'Ano de publicação.' },
+        publisher: { type: 'string', description: 'Editora.' },
+        synopsis: { type: 'string', description: 'Sinopse editorial clara e densa em Português.' },
+        category: { type: 'string', description: 'Categoria temática.' },
+      },
+      required: ['titlePt', 'author', 'originalYear', 'synopsis'],
+    };
+
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: METADATA_EXTRACTION_JSON_SCHEMA,
+      },
+    });
+
+    return JSON.parse(response.text || '{}');
   }
 }

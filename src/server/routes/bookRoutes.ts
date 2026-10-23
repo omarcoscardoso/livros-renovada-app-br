@@ -76,6 +76,42 @@ export function createBookRouter(
     }
   });
 
+  // Analyze PDF with Gemini AI to auto-fill metadata (Title, Author, Year, Publisher, Synopsis, Category)
+  router.post('/extract-metadata', requireAuth, upload.single('pdf'), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: 'Nenhum arquivo PDF fornecido.' });
+      }
+
+      // Extract first 15 pages in memory using PdfExtractorService
+      const extracted = await extractor.extractPdfPages(file.buffer);
+      const firstPagesText = extracted.pages
+        .slice(0, Math.min(15, extracted.pages.length))
+        .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1200)}`)
+        .join('\n\n');
+
+      const isSmallPdf = file.buffer.length <= 10 * 1024 * 1024;
+      const pdfBase64 = isSmallPdf ? file.buffer.toString('base64') : null;
+
+      const metadata = await conversionService.extractMetadataWithAi(
+        firstPagesText,
+        pdfBase64,
+        req.body?.apiKey
+      );
+
+      return res.json({ metadata });
+    } catch (error: any) {
+      console.error('Erro na extração de metadados com IA:', error);
+      return res.status(500).json({
+        error:
+          error?.message === 'GEMINI_KEY_MISSING'
+            ? 'Chave GEMINI_API_KEY não configurada. Configure a chave no painel para habilitar preenchimento automático por IA.'
+            : (error?.message || 'Falha ao analisar metadados do PDF com IA.'),
+      });
+    }
+  });
+
   // Upload new PDF book (Requires Authentication)
   router.post('/upload', requireAuth, upload.single('pdf'), async (req, res) => {
     try {
@@ -190,11 +226,6 @@ export function createBookRouter(
       const book = repo.getBookByIdOrSlug(req.params.id);
       if (!book) {
         return res.status(404).json({ error: 'Livro não encontrado.' });
-      }
-      if (book.id === DEFAULT_BOOK_ID) {
-        return res.status(400).json({
-          error: 'O livro original "A Igreja em Células" já possui tradução integral revisada.',
-        });
       }
 
       const pdfMeta = repo.getPdfMetadata(book.id);

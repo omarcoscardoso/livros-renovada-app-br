@@ -60,7 +60,7 @@ export interface Book {
   isAudiobookReady?: boolean;
 }
 
-export type LibrarialNavTab = 'browse' | 'books' | 'audiobooks' | 'library' | 'account';
+export type LibrarialNavTab = 'browse' | 'books' | 'library' | 'account';
 
 export type SortOption = 'popular' | 'recent' | 'title' | 'author' | 'rating';
 

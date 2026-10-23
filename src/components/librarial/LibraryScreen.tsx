@@ -21,7 +21,7 @@ import {
 import { Book, LibrarialNavTab, LibrarialTheme, SortOption } from '../../types/librarial';
 import { BottomNavigation } from './BottomNavigation';
 import { BookCard } from './BookCard';
-import { FloatingFilterBar } from './FloatingFilterBar';
+import { CatalogToolbar } from './CatalogToolbar';
 import { CategoryPills } from './CategoryPills';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PopularBooksScroll } from './PopularBooksScroll';
@@ -189,7 +189,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   }, [books, readChaptersMap]);
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-200 relative pb-32 ${pageBg}`}>
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 relative pb-24 ${pageBg}`}>
       {/* Top Header Dinâmico: Saudação com avatar, busca e tema */}
       <header className={`sticky top-0 z-30 border-b backdrop-blur-md px-4 sm:px-8 py-3.5 ${headerBg}`}>
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
@@ -348,18 +348,22 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               )}
             </div>
 
-            {/* All Books Section Header */}
-            <div className="flex items-center justify-between pt-2">
-              <h3 className="text-base sm:text-lg font-bold font-editorial">
-                Todos os Livros ({filteredBooks.length})
-              </h3>
-              <button
-                onClick={onOpenUpload}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#5C6BC0]/15 text-[#5C6BC0] hover:bg-[#5C6BC0]/25 font-bold text-xs transition-colors cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Adicionar PDF</span>
-              </button>
+            {/* All Books Section Header & Inline Toolbar */}
+            <div className="pt-2 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base sm:text-lg font-bold font-editorial">
+                  Todos os Livros
+                </h3>
+              </div>
+              <CatalogToolbar
+                sortBy={sortBy}
+                onChangeSort={setSortBy}
+                viewMode={viewMode}
+                onChangeViewMode={setViewMode}
+                theme={theme}
+                totalBooks={filteredBooks.length}
+                onOpenUpload={onOpenUpload}
+              />
             </div>
 
             {/* Vertical Items List or Grid */}
@@ -419,19 +423,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         {/* ============================================================== */}
         {currentTab === 'books' && (
           <div className="space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold font-editorial">Catálogo de Livros</h2>
-                <p className={`text-xs ${mutedText}`}>Explore e filtre todas as obras disponíveis</p>
-              </div>
-
-              <button
-                onClick={onOpenUpload}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#5C6BC0] text-white font-bold text-xs shadow-sm cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Adicionar PDF</span>
-              </button>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold font-editorial">Catálogo de Livros</h2>
+              <p className={`text-xs ${mutedText}`}>Explore e filtre todas as obras disponíveis</p>
             </div>
 
             <CategoryPills
@@ -441,96 +435,110 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               theme={theme}
             />
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {filteredBooks.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  theme={theme}
-                  variant="carousel"
-                  isFavorite={favorites.includes(book.id)}
-                  onToggleFavorite={handleToggleFav}
-                  onClick={(b) => setSelectedBookForDetails(b)}
-                  readCount={readChaptersMap[book.id]?.length || 0}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+            <CatalogToolbar
+              sortBy={sortBy}
+              onChangeSort={setSortBy}
+              viewMode={viewMode}
+              onChangeViewMode={setViewMode}
+              theme={theme}
+              totalBooks={filteredBooks.length}
+              onOpenUpload={onOpenUpload}
+            />
 
-        {/* ============================================================== */}
-        {/* TAB 3: AUDIOBOOKS                                              */}
-        {/* ============================================================== */}
-        {currentTab === 'audiobooks' && (
-          <div className="space-y-5">
-            <div className="p-6 rounded-3xl bg-gradient-to-r from-[#2A3469] to-[#1E293B] text-white space-y-2 shadow-xl">
-              <div className="w-10 h-10 rounded-2xl bg-[#5C6BC0]/30 text-white flex items-center justify-center">
-                <Headphones className="w-5 h-5 animate-pulse" />
+            {filteredBooks.length === 0 ? (
+              <div className="py-12 text-center space-y-3">
+                <p className={`text-sm ${mutedText}`}>Nenhum livro encontrado para esta categoria.</p>
               </div>
-              <h2 className="text-2xl font-bold font-editorial">Audiolivros Inteligentes</h2>
-              <p className="text-xs sm:text-sm text-slate-200 max-w-lg">
-                Ouça seus livros em português narrados automaticamente com controle de velocidade e sincronização de texto em tempo real via Web Speech API.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {books.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  theme={theme}
-                  variant="list"
-                  isFavorite={favorites.includes(book.id)}
-                  onToggleFavorite={handleToggleFav}
-                  onClick={(b) => {
-                    if (onStartAudiobook) {
-                      onStartAudiobook(b.id);
-                    } else {
-                      setSelectedBookForDetails(b);
-                    }
-                  }}
-                  readCount={readChaptersMap[book.id]?.length || 0}
-                />
-              ))}
-            </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {filteredBooks.map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    theme={theme}
+                    variant="carousel"
+                    isFavorite={favorites.includes(book.id)}
+                    onToggleFavorite={handleToggleFav}
+                    onClick={(b) => setSelectedBookForDetails(b)}
+                    readCount={readChaptersMap[book.id]?.length || 0}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredBooks.map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    theme={theme}
+                    variant="list"
+                    isFavorite={favorites.includes(book.id)}
+                    onToggleFavorite={handleToggleFav}
+                    onClick={(b) => setSelectedBookForDetails(b)}
+                    readCount={readChaptersMap[book.id]?.length || 0}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* TAB 4: MY LIBRARY                                              */}
+        {/* TAB 3: MY LIBRARY                                              */}
         {/* ============================================================== */}
         {currentTab === 'library' && (
           <div className="space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold font-editorial">Minha Biblioteca</h2>
-                <p className={`text-xs ${mutedText}`}>Suas leituras em andamento e obras favoritas</p>
-              </div>
-
-              <button
-                onClick={onOpenUpload}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#5C6BC0] text-white font-bold text-xs shadow-sm cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Adicionar PDF</span>
-              </button>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold font-editorial">Minha Biblioteca</h2>
+              <p className={`text-xs ${mutedText}`}>Suas leituras em andamento e obras favoritas</p>
             </div>
+
+            <CatalogToolbar
+              sortBy={sortBy}
+              onChangeSort={setSortBy}
+              viewMode={viewMode}
+              onChangeViewMode={setViewMode}
+              theme={theme}
+              totalBooks={filteredBooks.length}
+              onOpenUpload={onOpenUpload}
+            />
 
             {/* Favorite / Reading Books */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {filteredBooks.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  theme={theme}
-                  variant="carousel"
-                  isFavorite={favorites.includes(book.id)}
-                  onToggleFavorite={handleToggleFav}
-                  onClick={(b) => setSelectedBookForDetails(b)}
-                  readCount={readChaptersMap[book.id]?.length || 0}
-                />
-              ))}
-            </div>
+            {filteredBooks.length === 0 ? (
+              <div className="py-12 text-center space-y-3">
+                <p className={`text-sm ${mutedText}`}>Você ainda não tem livros favoritados ou em leitura.</p>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {filteredBooks.map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    theme={theme}
+                    variant="carousel"
+                    isFavorite={favorites.includes(book.id)}
+                    onToggleFavorite={handleToggleFav}
+                    onClick={(b) => setSelectedBookForDetails(b)}
+                    readCount={readChaptersMap[book.id]?.length || 0}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredBooks.map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    theme={theme}
+                    variant="list"
+                    isFavorite={favorites.includes(book.id)}
+                    onToggleFavorite={handleToggleFav}
+                    onClick={(b) => setSelectedBookForDetails(b)}
+                    readCount={readChaptersMap[book.id]?.length || 0}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -607,17 +615,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         )}
       </main>
 
-      {/* Floating Filter / Sort Bar (Centered above bottom nav) */}
-      <FloatingFilterBar
-        sortBy={sortBy}
-        onChangeSort={setSortBy}
-        viewMode={viewMode}
-        onChangeViewMode={setViewMode}
-        theme={theme}
-        totalBooks={filteredBooks.length}
-      />
-
-      {/* Fixed Bottom Navigation Bar (5 tabs) */}
+      {/* Fixed Bottom Navigation Bar (4 tabs) */}
       <BottomNavigation
         currentTab={currentTab}
         onSelectTab={setCurrentTab}

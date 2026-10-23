@@ -31,28 +31,23 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   const navItems: { id: LibrarialNavTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     {
       id: 'browse',
-      label: 'Browse',
+      label: 'Explorar',
       icon: <Compass className="w-5 h-5 transition-transform duration-200" />,
     },
     {
       id: 'books',
-      label: 'Books',
+      label: 'Livros',
       icon: <BookOpen className="w-5 h-5 transition-transform duration-200" />,
     },
     {
-      id: 'audiobooks',
-      label: 'Audiobooks',
-      icon: <Headphones className="w-5 h-5 transition-transform duration-200" />,
-    },
-    {
       id: 'library',
-      label: 'My Library',
+      label: 'Biblioteca',
       icon: <Bookmark className="w-5 h-5 transition-transform duration-200" />,
       badge: unreadCount > 0 ? unreadCount : undefined,
     },
     {
       id: 'account',
-      label: 'Account',
+      label: 'Perfil',
       icon: userAvatar ? (
         <img
           src={userAvatar}
