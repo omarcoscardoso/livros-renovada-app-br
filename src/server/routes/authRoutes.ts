@@ -3,10 +3,18 @@ import { OAuth2Client } from 'google-auth-library';
 import { IUserRepository } from '../repositories/userRepository';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 
+const getGoogleClientId = () => process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = new OAuth2Client();
 
 export function createAuthRouter(userRepo: IUserRepository): Router {
   const router = Router();
+
+  // Expose public auth configuration to dynamic frontend clients
+  router.get('/config', (_req, res) => {
+    res.json({
+      clientId: getGoogleClientId(),
+    });
+  });
 
   // Exchange Google ID Token / Credential for a secure session
   router.post('/google', async (req, res) => {
@@ -21,9 +29,11 @@ export function createAuthRouter(userRepo: IUserRepository): Router {
       let picture: string | undefined;
 
       try {
-        // Verify Google ID token signature
+        // Verify Google ID token signature with target audience if configured
+        const targetAudience = getGoogleClientId();
         const ticket = await googleClient.verifyIdToken({
           idToken: credential,
+          ...(targetAudience ? { audience: targetAudience } : {}),
         });
         const payload = ticket.getPayload();
         if (!payload || !payload.email) {

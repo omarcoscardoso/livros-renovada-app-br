@@ -38,10 +38,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ theme }) => {
       return;
     }
 
-    const clientId =
-      (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
-      '1042749847534-8ovq26s5gjvebv2q2002k4fj3cqbeu5t.apps.googleusercontent.com';
-
     const handleCredentialResponse = async (response: any) => {
       if (response?.credential) {
         setIsAuthenticating(true);
@@ -54,29 +50,44 @@ export const LoginModal: React.FC<LoginModalProps> = ({ theme }) => {
       }
     };
 
-    const initGoogleGsi = () => {
-      if (window.google?.accounts?.id && googleBtnRef.current) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleCredentialResponse,
-            auto_select: false,
-          });
+    const renderGoogleBtn = (targetClientId: string) => {
+      if (!targetClientId || !window.google?.accounts?.id || !googleBtnRef.current) return;
+      try {
+        window.google.accounts.id.initialize({
+          client_id: targetClientId,
+          callback: handleCredentialResponse,
+          auto_select: false,
+        });
 
-          googleBtnRef.current.innerHTML = '';
-          window.google.accounts.id.renderButton(googleBtnRef.current, {
-            theme: isDark ? 'filled_black' : 'outline',
-            size: 'large',
-            type: 'standard',
-            shape: 'pill',
-            text: 'signin_with',
-            logo_alignment: 'left',
-            width: 280,
-          });
-        } catch (err) {
-          console.warn('Aviso ao inicializar Google Identity Services:', err);
+        googleBtnRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(googleBtnRef.current, {
+          theme: isDark ? 'filled_black' : 'outline',
+          size: 'large',
+          type: 'standard',
+          shape: 'pill',
+          text: 'signin_with',
+          logo_alignment: 'left',
+          width: 280,
+        });
+      } catch (err) {
+        console.warn('Aviso ao inicializar Google Identity Services:', err);
+      }
+    };
+
+    const initGoogleGsi = async () => {
+      let resolvedClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+      if (!resolvedClientId) {
+        try {
+          const res = await fetch('/api/auth/config');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.clientId) resolvedClientId = data.clientId;
+          }
+        } catch {
+          // ignore
         }
       }
+      renderGoogleBtn(resolvedClientId);
     };
 
     if (window.google?.accounts?.id) {

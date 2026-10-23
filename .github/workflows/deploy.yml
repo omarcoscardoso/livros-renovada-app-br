@@ -37,7 +37,7 @@ jobs:
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev
 
       - name: Build Docker Image
-        run: docker build --pull -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+        run: docker build --pull --build-arg VITE_GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
 
       - name: Push Docker Image
         run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
@@ -60,6 +60,8 @@ jobs:
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
             GCS_BUCKET=${{ env.GCS_BUCKET }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
 
       - name: Exibir URL do Cloud Run
         run: |

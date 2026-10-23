@@ -10,6 +10,9 @@ COPY index.html vite.config.ts tsconfig.json server.ts ./
 COPY public ./public
 COPY src ./src
 
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
 RUN npm run build
 
 # Estágio 2: Runtime de Produção para Google Cloud Run
