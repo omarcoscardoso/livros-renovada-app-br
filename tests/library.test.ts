@@ -106,8 +106,10 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(updated?.chapters.length).toBe(1);
     expect(updated?.chapters[0].titlePt).toBe('Capítulo 1: O Chamado');
 
-    // Não deve permitir remover o livro padrão
-    expect(() => repo.deleteBook(DEFAULT_BOOK_ID)).toThrow();
+    // Deve permitir remover qualquer livro, inclusive o inicial quando solicitado pelo usuário
+    const deletedDefault = repo.deleteBook(DEFAULT_BOOK_ID);
+    expect(deletedDefault).toBe(true);
+    expect(repo.getSetting('default_book_deleted')).toBe('true');
 
     // Deve remover o livro customizado
     const deleted = repo.deleteBook('book-test-1');

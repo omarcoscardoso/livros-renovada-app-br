@@ -184,7 +184,7 @@ function LibraryApp({
       const res = await fetch('/api/books');
       if (!res.ok) return;
       const data = await res.json();
-      if (Array.isArray(data.books) && data.books.length > 0) {
+      if (Array.isArray(data.books)) {
         setBooksList(data.books);
       }
       if (typeof data.hasGeminiKey === 'boolean') {

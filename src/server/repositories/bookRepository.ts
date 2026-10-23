@@ -81,6 +81,11 @@ export class SqliteBookRepository implements IBookRepository {
   }
 
   public seedDefaultBookIfNeeded(): void {
+    if (this.getSetting('default_book_deleted') === 'true') {
+      // User explicitly deleted the default book, do not re-seed it
+      return;
+    }
+
     const existing = this.db
       .prepare('SELECT id, cover_image_filename FROM books WHERE id = ? OR slug = ?')
       .get(DEFAULT_BOOK_ID, DEFAULT_BOOK_ID) as
@@ -444,7 +449,7 @@ export class SqliteBookRepository implements IBookRepository {
 
   public deleteBook(id: string): boolean {
     if (id === DEFAULT_BOOK_ID) {
-      throw new Error('O livro padrão da biblioteca não pode ser removido.');
+      this.setSetting('default_book_deleted', 'true');
     }
 
     const pdfMeta = this.getPdfMetadata(id);

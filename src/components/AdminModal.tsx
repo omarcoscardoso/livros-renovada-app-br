@@ -379,7 +379,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             <span className="hidden md:inline">Editar</span>
                           </button>
 
-                          {!isBaseBook && b.hasOriginalPdf && (
+                          {b.hasOriginalPdf && (
                             <button
                               onClick={() => onReprocessBook(b.id)}
                               className="p-2 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-amber-500 text-xs font-semibold flex items-center gap-1 cursor-pointer"
@@ -390,16 +390,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             </button>
                           )}
 
-                          {!isBaseBook && (
-                            <button
-                              onClick={() => onDeleteBook(b.id)}
-                              className="p-2 rounded-xl border border-black/10 dark:border-white/10 hover:bg-rose-500/15 text-rose-500 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                              title="Excluir livro da biblioteca"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span className="hidden md:inline">Excluir</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => onDeleteBook(b.id)}
+                            className="p-2 rounded-xl border border-black/10 dark:border-white/10 hover:bg-rose-500/15 text-rose-500 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                            title="Excluir livro da biblioteca"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span className="hidden md:inline">Excluir</span>
+                          </button>
                         </div>
                       </div>
                     );

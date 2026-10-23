@@ -216,7 +216,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                         <Edit3 className="w-4 h-4" />
                       </button>
 
-                      {!isDefault && b.hasOriginalPdf && (
+                      {b.hasOriginalPdf && (
                         <button
                           onClick={() => onReprocessBook(b.id)}
                           disabled={isProcessing}
@@ -227,15 +227,13 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                         </button>
                       )}
 
-                      {!isDefault && (
-                        <button
-                          onClick={() => onDeleteBook(b.id)}
-                          className="p-2 rounded-xl bg-slate-700/70 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
-                          title="Excluir livro da biblioteca"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => onDeleteBook(b.id)}
+                        className="p-2 rounded-xl bg-slate-700/70 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
+                        title="Excluir livro da biblioteca"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
