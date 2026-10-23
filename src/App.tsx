@@ -18,7 +18,7 @@ import { BookshelfView } from './components/BookshelfView';
 import { UploadBookModal } from './components/UploadBookModal';
 import { BookEditorModal } from './components/BookEditorModal';
 import { LoginModal } from './components/LoginModal';
-import { AdminModal } from './components/AdminModal';
+import { AdminScreen } from './components/AdminScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Loader2, Check } from 'lucide-react';
 
@@ -71,7 +71,7 @@ function LibraryApp({
   const { user, openLoginModal, syncReadingProgressToAccount } = useAuth();
 
   // Initial view is the virtual Bookshelf ("estante")
-  const [currentView, setCurrentView] = useState<'bookshelf' | 'reader'>('bookshelf');
+  const [currentView, setCurrentView] = useState<'bookshelf' | 'reader' | 'admin'>('bookshelf');
 
   const [booksList, setBooksList] = useState<BookSummary[]>([FALLBACK_DEFAULT_SUMMARY]);
   const [activeBook, setActiveBook] = useState<StoredBook>(FALLBACK_DEFAULT_BOOK);
@@ -132,7 +132,6 @@ function LibraryApp({
   );
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [editingBook, setEditingBook] = useState<StoredBook | null>(null);
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
 
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
@@ -405,7 +404,22 @@ function LibraryApp({
         </div>
       )}
 
-      {currentView === 'bookshelf' ? (
+      {currentView === 'admin' ? (
+        <AdminScreen
+          onBack={() => setCurrentView('bookshelf')}
+          books={booksList}
+          onRefreshLibrary={fetchLibrary}
+          onEditBook={(bookId) => handleOpenEditBook(bookId)}
+          onDeleteBook={handleDeleteBook}
+          onReprocessBook={handleReprocessBook}
+          onOpenPdfForBook={(bookId) => {
+            const found = booksList.find((b) => b.id === bookId) || activeBook;
+            setPdfTargetBook(found);
+            setIsPdfOpen(true);
+          }}
+          theme={theme}
+        />
+      ) : currentView === 'bookshelf' ? (
         <BookshelfView
           books={booksList}
           readChaptersMap={readChaptersMap}
@@ -421,7 +435,7 @@ function LibraryApp({
           onEditBook={(bookId) => handleOpenEditBook(bookId)}
           onDeleteBook={handleDeleteBook}
           onReprocessBook={handleReprocessBook}
-          onOpenAdmin={() => setIsAdminModalOpen(true)}
+          onOpenAdmin={() => setCurrentView('admin')}
         />
       ) : (
         <>
@@ -471,7 +485,7 @@ function LibraryApp({
                   setCurrentView('bookshelf');
                 }}
                 onOpenUpload={handleOpenUpload}
-                onOpenAdmin={() => setIsAdminModalOpen(true)}
+                onOpenAdmin={() => setCurrentView('admin')}
                 theme={theme}
                 onChangeTheme={handleChangeTheme}
                 fontSize={fontSize}
@@ -607,23 +621,6 @@ function LibraryApp({
 
       {/* Google Login Modal (Requirement 3 & 5) */}
       <LoginModal theme={theme} />
-
-      {/* Admin Panel Modal (Requirement 4) */}
-      <AdminModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        books={booksList}
-        onRefreshLibrary={fetchLibrary}
-        onEditBook={(bookId) => handleOpenEditBook(bookId)}
-        onDeleteBook={(bookId) => handleDeleteBook(bookId)}
-        onReprocessBook={(bookId) => handleReprocessBook(bookId)}
-        onOpenPdfForBook={(bookId) => {
-          const found = booksList.find((b) => b.id === bookId) || activeBook;
-          setPdfTargetBook(found);
-          setIsPdfOpen(true);
-        }}
-        theme={theme}
-      />
     </div>
   );
 }

@@ -129,5 +129,24 @@ export function createAdminRouter(
     }
   });
 
+  // Toggle Book Featured status (Destaque Editorial)
+  router.put('/books/:id/featured', (req: AuthenticatedRequest, res) => {
+    try {
+      const { isFeatured } = req.body;
+      if (typeof isFeatured !== 'boolean') {
+        return res.status(400).json({ error: 'Valor booleano isFeatured é obrigatório.' });
+      }
+
+      const success = bookRepo.setBookFeatured(req.params.id, isFeatured);
+      if (!success) {
+        return res.status(404).json({ error: 'Livro não encontrado.' });
+      }
+
+      return res.json({ success: true, isFeatured });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao alterar destaque editorial.' });
+    }
+  });
+
   return router;
 }

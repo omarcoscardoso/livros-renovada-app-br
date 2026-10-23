@@ -8,7 +8,7 @@ on:
 
 env:
   PROJECT_ID: renovada-app-br
-  SERVICE_NAME: livros-renovada-app-br
+  SERVICE_NAME: lumi-renovada-app-br
   REGION: us-central1
   AR_REPO_NAME: cloud-run-source-deploy
   GCS_BUCKET: livros-renovada-app-br

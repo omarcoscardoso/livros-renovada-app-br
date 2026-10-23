@@ -48,6 +48,9 @@ export interface StoredBook extends BookInfo {
   conversionProgress?: string;
   conversionPercent?: number;
   errorMessage?: string;
+  isFeatured?: boolean;
+  rating?: number;
+  reviewsCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +77,7 @@ export interface BookSummary {
   conversionProgress?: string;
   conversionPercent?: number;
   errorMessage?: string;
+  isFeatured?: boolean;
   createdAt: string;
   updatedAt: string;
   // Librarial Extended Metadata (Optional)

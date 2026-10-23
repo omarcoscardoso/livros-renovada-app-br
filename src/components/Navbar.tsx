@@ -107,10 +107,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onOpenLibrary}
           className="px-2.5 py-1 rounded-lg bg-[#5C6BC0]/15 hover:bg-[#5C6BC0]/25 text-[#5C6BC0] border border-[#5C6BC0]/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
-          title="Voltar para a tela inicial do Livro App"
+          title="Voltar para a tela inicial do Lumi"
         >
           <Library className="w-3.5 h-3.5" />
-          <span>Livro App</span>
+          <span>Lumi</span>
           <span className="px-1.5 py-0.2 rounded-full bg-[#5C6BC0]/20 text-[10px] font-mono">
             {totalBooksCount}
           </span>

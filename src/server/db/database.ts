@@ -48,6 +48,9 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       conversion_percent INTEGER DEFAULT 100,
       error_message TEXT,
       chapters_json TEXT NOT NULL,
+      rating REAL DEFAULT 0,
+      reviews_count INTEGER DEFAULT 0,
+      is_featured INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -84,6 +87,16 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (user_id, book_id)
     );
+
+    CREATE TABLE IF NOT EXISTS book_ratings (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      stars INTEGER NOT NULL CHECK (stars >= 1 AND stars <= 5),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(book_id, user_id)
+    );
   `);
 
   const cols = db.prepare(`PRAGMA table_info(books)`).all() as Array<{ name: string }>;
@@ -93,6 +106,15 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
   }
   if (!colNames.has('cover_page_number')) {
     db.exec(`ALTER TABLE books ADD COLUMN cover_page_number INTEGER DEFAULT 1`);
+  }
+  if (!colNames.has('rating')) {
+    db.exec(`ALTER TABLE books ADD COLUMN rating REAL DEFAULT 0`);
+  }
+  if (!colNames.has('reviews_count')) {
+    db.exec(`ALTER TABLE books ADD COLUMN reviews_count INTEGER DEFAULT 0`);
+  }
+  if (!colNames.has('is_featured')) {
+    db.exec(`ALTER TABLE books ADD COLUMN is_featured INTEGER DEFAULT 0`);
   }
 
   // Ensure default admin user cardoso.oliveira@gmail.com exists and has admin privileges (Requirement 4)

@@ -57,6 +57,9 @@ export interface IBookRepository {
     }
   ): StoredBook | null;
   deleteBook(id: string): boolean;
+  rateBook(bookId: string, userId: string, stars: number): { rating: number; reviewsCount: number };
+  getUserRating(bookId: string, userId: string): number | null;
+  setBookFeatured(id: string, isFeatured: boolean): boolean;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string): void;
 }
@@ -201,6 +204,9 @@ export class SqliteBookRepository implements IBookRepository {
             ? Number(row.conversion_percent)
             : 100,
         errorMessage: row.error_message ? String(row.error_message) : undefined,
+        isFeatured: Boolean(row.is_featured),
+        rating: row.rating !== null && row.rating !== undefined ? Number(row.rating) : 0,
+        reviewsCount: row.reviews_count !== null && row.reviews_count !== undefined ? Number(row.reviews_count) : 0,
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
       };
@@ -244,6 +250,9 @@ export class SqliteBookRepository implements IBookRepository {
           ? Number(row.conversion_percent)
           : 100,
       errorMessage: row.error_message ? String(row.error_message) : undefined,
+      isFeatured: Boolean(row.is_featured),
+      rating: row.rating !== null && row.rating !== undefined ? Number(row.rating) : 0,
+      reviewsCount: row.reviews_count !== null && row.reviews_count !== undefined ? Number(row.reviews_count) : 0,
       chapters,
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
@@ -466,6 +475,60 @@ export class SqliteBookRepository implements IBookRepository {
 
     this.triggerRemoteDbSync();
     return result.changes > 0;
+  }
+
+  public setBookFeatured(id: string, isFeatured: boolean): boolean {
+    const now = new Date().toISOString();
+    const res = this.db
+      .prepare('UPDATE books SET is_featured = ?, updated_at = ? WHERE id = ? OR slug = ?')
+      .run(isFeatured ? 1 : 0, now, id, id);
+    if (res.changes > 0) {
+      this.triggerRemoteDbSync();
+      return true;
+    }
+    return false;
+  }
+
+  public rateBook(bookId: string, userId: string, stars: number): { rating: number; reviewsCount: number } {
+    const clampedStars = Math.max(1, Math.min(5, Math.round(stars)));
+    const now = new Date().toISOString();
+    const id = `rate_${bookId}_${userId}`;
+
+    // Upsert rating
+    this.db.prepare(`
+      INSERT INTO book_ratings (id, book_id, user_id, stars, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(book_id, user_id) DO UPDATE SET
+        stars = excluded.stars,
+        updated_at = excluded.updated_at
+    `).run(id, bookId, userId, clampedStars, now, now);
+
+    // Compute AVG and COUNT
+    const stats = this.db.prepare(`
+      SELECT AVG(stars) as avg_stars, COUNT(*) as total_reviews
+      FROM book_ratings
+      WHERE book_id = ?
+    `).get(bookId) as { avg_stars: number | null; total_reviews: number } | undefined;
+
+    const avg = stats?.avg_stars ? Number(stats.avg_stars.toFixed(1)) : clampedStars;
+    const count = stats?.total_reviews || 1;
+
+    // Update book table
+    this.db.prepare(`
+      UPDATE books
+      SET rating = ?, reviews_count = ?, updated_at = ?
+      WHERE id = ? OR slug = ?
+    `).run(avg, count, now, bookId, bookId);
+
+    this.triggerRemoteDbSync();
+    return { rating: avg, reviewsCount: count };
+  }
+
+  public getUserRating(bookId: string, userId: string): number | null {
+    const row = this.db.prepare(`
+      SELECT stars FROM book_ratings WHERE book_id = ? AND user_id = ?
+    `).get(bookId, userId) as { stars: number } | undefined;
+    return row ? Number(row.stars) : null;
   }
 
   public getSetting(key: string): string | null {

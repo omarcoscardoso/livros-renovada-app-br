@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sparkles, BookOpen, ChevronRight, Award } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { BookOpen, ChevronRight, ChevronLeft, Award, Sparkles } from 'lucide-react';
 import { Book, LibrarialTheme } from '../../types/librarial';
 
 interface FeaturedCarouselProps {
@@ -15,7 +15,27 @@ export const FeaturedCarousel: React.FC<FeaturedCarouselProps> = ({
 }) => {
   if (books.length === 0) return null;
 
-  const featuredBook = books[0];
+  // Priority: Books explicitly marked as isFeatured by Admin. Fallback to books[0].
+  const featuredList = useMemo(() => {
+    const explicitlyFeatured = books.filter((b) => b.isFeatured);
+    return explicitlyFeatured.length > 0 ? explicitlyFeatured : [books[0]];
+  }, [books]);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Bounds safety
+  const safeIndex = currentIndex < featuredList.length ? currentIndex : 0;
+  const featuredBook = featuredList[safeIndex];
+
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : featuredList.length - 1));
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev < featuredList.length - 1 ? prev + 1 : 0));
+  };
 
   return (
     <div className="relative rounded-3xl overflow-hidden shadow-2xl transition-all duration-300">
@@ -37,10 +57,18 @@ export const FeaturedCarousel: React.FC<FeaturedCarouselProps> = ({
 
       {/* Content */}
       <div className="relative z-10 p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 text-white">
-        <div className="space-y-3 max-w-xl text-center md:text-left">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#FF7A00] text-white shadow-sm">
-            <Award className="w-3.5 h-3.5" />
-            <span>Destaque Editorial • Livro App</span>
+        <div className="space-y-3 max-w-xl text-center md:text-left flex-1">
+          <div className="flex items-center justify-center md:justify-start gap-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#FF7A00] text-white shadow-sm">
+              <Award className="w-3.5 h-3.5" />
+              <span>Destaque Editorial • Lumi</span>
+            </div>
+
+            {featuredList.length > 1 && (
+              <span className="text-[11px] font-mono text-white/70">
+                {safeIndex + 1} de {featuredList.length}
+              </span>
+            )}
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-extrabold font-editorial leading-tight">
@@ -49,7 +77,7 @@ export const FeaturedCarousel: React.FC<FeaturedCarouselProps> = ({
 
           <p className="text-xs sm:text-sm text-slate-200 line-clamp-2 leading-relaxed font-light">
             {featuredBook.subtitlePt ||
-              `Aprofunde-se nos princípios de discipulado, comunhão bíblica e liderança pastoral com a obra integral de ${featuredBook.author}.`}
+              `Aprofunde-se nos princípios bíblicos, liderança e comunhão com a obra de ${featuredBook.author}.`}
           </p>
 
           <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-3">
@@ -61,6 +89,41 @@ export const FeaturedCarousel: React.FC<FeaturedCarouselProps> = ({
               <span>Explorar Obra</span>
               <ChevronRight className="w-4 h-4" />
             </button>
+
+            {/* Pagination Controls if multiple featured books */}
+            {featuredList.length > 1 && (
+              <div className="flex items-center gap-1.5 ml-2">
+                <button
+                  onClick={handlePrev}
+                  className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                  title="Anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-1 px-1">
+                  {featuredList.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentIndex(i);
+                      }}
+                      className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                        i === safeIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/40'
+                      }`}
+                      aria-label={`Destaque ${i + 1}`}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={handleNext}
+                  className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                  title="Próximo"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

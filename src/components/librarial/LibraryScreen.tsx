@@ -78,6 +78,13 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  const handleSelectTab = (tab: LibrarialNavTab) => {
+    setCurrentTab(tab);
+    if (tab === 'books') {
+      setViewMode('list');
+    }
+  };
+
   const isDark = theme === 'dark' || theme === 'contrast';
   const isSepia = theme === 'sepia';
 
@@ -201,7 +208,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-xl font-bold font-sans tracking-tight text-current">
-                  Livro App
+                  Lumi
                 </h1>
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FF7A00]/15 text-[#FF7A00] border border-[#FF7A00]/30">
                   Librarial UI
@@ -362,7 +369,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 onChangeViewMode={setViewMode}
                 theme={theme}
                 totalBooks={filteredBooks.length}
-                onOpenUpload={onOpenUpload}
               />
             </div>
 
@@ -442,7 +448,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               onChangeViewMode={setViewMode}
               theme={theme}
               totalBooks={filteredBooks.length}
-              onOpenUpload={onOpenUpload}
             />
 
             {filteredBooks.length === 0 ? (
@@ -500,7 +505,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               onChangeViewMode={setViewMode}
               theme={theme}
               totalBooks={filteredBooks.length}
-              onOpenUpload={onOpenUpload}
             />
 
             {/* Favorite / Reading Books */}
@@ -615,11 +619,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         )}
       </main>
 
-      {/* Fixed Bottom Navigation Bar (4 tabs) */}
+      {/* Fixed Bottom Navigation Bar */}
       <BottomNavigation
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         theme={theme}
+        onOpenUpload={onOpenUpload}
         unreadCount={
           books.filter((b) => {
             const read = readChaptersMap[b.id] || [];

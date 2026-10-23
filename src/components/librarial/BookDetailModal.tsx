@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Star,
@@ -62,6 +62,55 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   // Offline export states (SOP Phase 5)
   const [isExporting, setIsExporting] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
+
+  // Real User Rating State
+  const [currentRating, setCurrentRating] = useState<number>(0);
+  const [reviewsCount, setReviewsCount] = useState<number>(0);
+  const [userRating, setUserRating] = useState<number>(0);
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!book) return;
+    setCurrentRating(typeof book.rating === 'number' ? book.rating : 0);
+    setReviewsCount(typeof book.reviewsCount === 'number' ? book.reviewsCount : 0);
+    setUserRating(0);
+
+    fetch(`/api/books/${encodeURIComponent(book.id)}/user-rating`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data.userRating === 'number') {
+          setUserRating(data.userRating);
+        }
+      })
+      .catch(() => {});
+  }, [book]);
+
+  const handleRateBook = async (stars: number) => {
+    if (isSubmittingRating || !book) return;
+    setIsSubmittingRating(true);
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(book.id)}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stars }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUserRating(stars);
+        setCurrentRating(data.rating ?? stars);
+        setReviewsCount(data.reviewsCount ?? (reviewsCount + 1));
+      } else if (res.status === 401) {
+        alert('Faça login com sua conta para avaliar livros!');
+      } else {
+        alert(data.error || 'Erro ao registrar avaliação.');
+      }
+    } catch {
+      alert('Erro de conexão ao enviar avaliação.');
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
 
   const fetchFullBookAndChapters = async () => {
     const res = await fetch(`/api/books/${encodeURIComponent(book?.id || '')}`);
@@ -135,9 +184,11 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     ? 'text-[#705E4D]'
     : 'text-slate-500';
 
-  const rating = book.rating || 4.9;
-  const reviewsCount = book.reviewsCount || 184;
-  const rankingText = book.rankingText || '#01 Recomendado';
+  const hasRating = reviewsCount > 0;
+  const ratingFormatted = hasRating ? currentRating.toFixed(1) : null;
+  const starTextColor = isSepia ? 'text-[#92400E]' : 'text-[#FF7A00]';
+  const starFillColor = isSepia ? 'fill-[#92400E]' : 'fill-[#FF7A00]';
+  const rankingText = book.rankingText || (hasRating ? '#01 Recomendado' : 'Lançamento Lumi');
   const totalCh = Math.max(1, book.chapterCount);
   const estimatedPages = book.pageCount || Math.round(totalCh * 18);
   const estimatedAudioMinutes = book.audioDurationMinutes || book.totalEstimatedMinutes || 145;
@@ -157,7 +208,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     if (navigator.share) {
       navigator.share({
         title: book.titlePt,
-        text: `Confira o livro "${book.titlePt}" de ${book.author} no Livro App.`,
+        text: `Confira o livro "${book.titlePt}" de ${book.author} no Lumi.`,
         url: window.location.href,
       }).catch(() => {});
     } else {
@@ -314,12 +365,18 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
               {/* Star Rating & Reviews */}
               <div className="flex items-center justify-center sm:justify-start gap-2 pt-1 text-xs">
-                <div className="flex items-center text-[#FF7A00]">
-                  <Star className="w-4 h-4 fill-current" />
-                  <span className="font-bold ml-1 text-current">{rating}</span>
+                <div className={`flex items-center ${starTextColor}`}>
+                  <Star className={`w-4 h-4 fill-current ${starFillColor}`} />
+                  <span className="font-bold ml-1 text-current">
+                    {hasRating ? ratingFormatted : 'Novo'}
+                  </span>
                 </div>
                 <span className={mutedText}>•</span>
-                <span className={mutedText}>({reviewsCount} avaliações)</span>
+                <span className={mutedText}>
+                  {hasRating
+                    ? `(${reviewsCount} ${reviewsCount === 1 ? 'avaliação' : 'avaliações'})`
+                    : '(Sem avaliações)'}
+                </span>
                 {book.category && (
                   <>
                     <span className={mutedText}>•</span>
@@ -404,12 +461,12 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           </div>
 
           <div className={`p-3 rounded-2xl border flex flex-col items-center text-center ${cardSurfaceBg}`}>
-            <Award className="w-4 h-4 text-[#FF7A00] mb-1" />
+            <Award className={`w-4 h-4 mb-1 ${starTextColor}`} />
             <span className={`text-[10px] font-semibold uppercase tracking-wider ${mutedText}`}>
               Classificação
             </span>
-            <span className="text-sm font-bold mt-0.5 text-[#FF7A00]">
-              ⭐ {rating}
+            <span className={`text-sm font-bold mt-0.5 ${starTextColor}`}>
+              {hasRating ? `⭐ ${ratingFormatted}` : 'Novo'}
             </span>
           </div>
         </div>
@@ -532,6 +589,56 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+
+              {/* Sistema Real de Avaliação pelos Leitores */}
+              <div
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${cardSurfaceBg}`}
+              >
+                <div className="space-y-1 text-center sm:text-left flex-1">
+                  <div className="flex items-center justify-center sm:justify-start gap-1.5">
+                    <Star className={`w-4 h-4 fill-current ${starTextColor}`} />
+                    <h4 className="text-xs font-bold text-current">Avaliação dos Leitores</h4>
+                  </div>
+                  <p className={`text-[11px] ${mutedText} leading-relaxed`}>
+                    {hasRating
+                      ? `Média de ${ratingFormatted} estrelas calculada a partir de ${reviewsCount} ${
+                          reviewsCount === 1 ? 'avaliação' : 'avaliações'
+                        } de usuários.`
+                      : 'Esta obra ainda não possui avaliações. Seja o primeiro a deixar sua nota!'}
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-center sm:items-end gap-1.5 shrink-0">
+                  <span className={`text-[11px] font-semibold ${mutedText}`}>
+                    {userRating > 0 ? `Sua nota: ${userRating} estrelas` : 'Avalie esta obra:'}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const isFilled = (hoverRating || userRating) >= star;
+                      return (
+                        <button
+                          key={star}
+                          type="button"
+                          disabled={isSubmittingRating}
+                          onMouseEnter={() => setHoverRating(star)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          onClick={() => handleRateBook(star)}
+                          className="p-1 rounded-lg hover:scale-125 transition-transform cursor-pointer disabled:opacity-50"
+                          title={`Avaliar com ${star} estrela${star > 1 ? 's' : ''}`}
+                        >
+                          <Star
+                            className={`w-5 h-5 transition-colors ${
+                              isFilled
+                                ? `${starTextColor} ${starFillColor}`
+                                : 'text-slate-300 dark:text-neutral-600'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Formatos de Entrega & Exportação Offline (SOP Fase 5B e 5C) */}

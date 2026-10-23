@@ -50,6 +50,7 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   // Librarial Extended Fields
+  isFeatured?: boolean;
   rating?: number;
   reviewsCount?: number;
   category?: string;

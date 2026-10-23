@@ -162,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors border border-slate-700 cursor-pointer"
             >
               <Library className="w-3.5 h-3.5 text-[#5C6BC0] shrink-0" />
-              <span className="truncate">Livro App ({totalBooksCount})</span>
+              <span className="truncate">Lumi ({totalBooksCount})</span>
             </button>
 
             <button

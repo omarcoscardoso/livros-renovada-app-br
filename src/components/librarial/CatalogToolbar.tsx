@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpDown, Grid3X3, List, Upload } from 'lucide-react';
+import { ArrowUpDown, Grid3X3, List } from 'lucide-react';
 import { LibrarialTheme, SortOption } from '../../types/librarial';
 
 interface CatalogToolbarProps {
@@ -9,7 +9,6 @@ interface CatalogToolbarProps {
   onChangeViewMode: (mode: 'grid' | 'list') => void;
   theme: LibrarialTheme;
   totalBooks: number;
-  onOpenUpload?: () => void;
 }
 
 export const CatalogToolbar: React.FC<CatalogToolbarProps> = ({
@@ -19,7 +18,6 @@ export const CatalogToolbar: React.FC<CatalogToolbarProps> = ({
   onChangeViewMode,
   theme,
   totalBooks,
-  onOpenUpload,
 }) => {
   const isDark = theme === 'dark' || theme === 'contrast';
   const isSepia = theme === 'sepia';
@@ -94,18 +92,6 @@ export const CatalogToolbar: React.FC<CatalogToolbarProps> = ({
           {totalBooks} {totalBooks === 1 ? 'obra' : 'obras'}
         </span>
       </div>
-
-      {/* Right side: Action Button */}
-      {onOpenUpload && (
-        <button
-          type="button"
-          onClick={onOpenUpload}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#5C6BC0] hover:bg-[#4D5AB5] text-white text-xs font-bold transition-all shadow-sm cursor-pointer ml-auto"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span>Adicionar PDF</span>
-        </button>
-      )}
     </div>
   );
 };

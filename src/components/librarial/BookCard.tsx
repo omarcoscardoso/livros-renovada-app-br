@@ -45,7 +45,9 @@ export const BookCard: React.FC<BookCardProps> = ({
     : 'text-slate-500';
 
   const coverGradient = COVER_GRADIENTS[book.coverColor] || COVER_GRADIENTS.amber;
-  const rating = book.rating || 4.9;
+  const hasRating = typeof book.rating === 'number' && book.rating > 0;
+  const ratingFormatted = hasRating ? book.rating.toFixed(1) : null;
+  const starTextColor = isSepia ? 'text-[#92400E]' : 'text-[#FF7A00]';
   const totalCh = Math.max(1, book.chapterCount);
   const percent = Math.min(100, Math.round((readCount / totalCh) * 100));
   const isCompleted = readCount >= totalCh && totalCh > 0;
@@ -60,9 +62,9 @@ export const BookCard: React.FC<BookCardProps> = ({
       >
         {/* Top Floating Rating & Favorite */}
         <div className="flex items-center justify-between mb-2.5 z-10">
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md text-[#FF7A00] text-[10px] font-bold">
-            <Star className="w-3 h-3 fill-current text-[#FF7A00]" />
-            <span>{rating}</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-md text-[10px] font-bold text-white">
+            <Star className={`w-3 h-3 ${isSepia ? 'fill-amber-400 text-amber-400' : 'fill-[#FF7A00] text-[#FF7A00]'}`} />
+            <span>{hasRating ? ratingFormatted : 'Novo'}</span>
           </div>
 
           <button
@@ -183,9 +185,9 @@ export const BookCard: React.FC<BookCardProps> = ({
           </p>
 
           <div className={`flex items-center gap-3 pt-0.5 text-[11px] ${mutedText}`}>
-            <span className="flex items-center gap-1 text-[#FF7A00] font-bold">
+            <span className={`flex items-center gap-1 font-bold ${starTextColor}`}>
               <Star className="w-3 h-3 fill-current" />
-              {rating}
+              {hasRating ? ratingFormatted : 'Novo'}
             </span>
             <span>•</span>
             <span>{book.chapterCount} cap. (~{estimatedPages}p)</span>

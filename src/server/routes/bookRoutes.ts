@@ -76,6 +76,63 @@ export function createBookRouter(
     }
   });
 
+  // Rate a book (1 to 5 stars) - Real user reviews
+  router.post('/:id/rate', async (req: any, res) => {
+    try {
+      const bookId = req.params.id;
+      const stars = Number(req.body?.stars);
+      if (!stars || stars < 1 || stars > 5) {
+        return res.status(400).json({ error: 'Nota inválida. Escolha entre 1 e 5 estrelas.' });
+      }
+
+      const book = repo.getBookByIdOrSlug(bookId);
+      if (!book) {
+        return res.status(404).json({ error: 'Livro não encontrado.' });
+      }
+
+      const userId =
+        req.user?.id ||
+        req.cookies?.session_token ||
+        req.headers['x-forwarded-for'] ||
+        req.socket?.remoteAddress ||
+        'anonymous_reader';
+
+      const result = repo.rateBook(book.id, String(userId), stars);
+      return res.json({
+        success: true,
+        rating: result.rating,
+        reviewsCount: result.reviewsCount,
+        userRating: stars,
+      });
+    } catch (error: any) {
+      console.error('Erro ao avaliar livro:', error);
+      return res.status(500).json({ error: 'Falha ao registrar avaliação.' });
+    }
+  });
+
+  // Get user's own rating for this book
+  router.get('/:id/user-rating', (req: any, res) => {
+    try {
+      const bookId = req.params.id;
+      const book = repo.getBookByIdOrSlug(bookId);
+      if (!book) {
+        return res.json({ userRating: null });
+      }
+
+      const userId =
+        req.user?.id ||
+        req.cookies?.session_token ||
+        req.headers['x-forwarded-for'] ||
+        req.socket?.remoteAddress ||
+        'anonymous_reader';
+
+      const userRating = repo.getUserRating(book.id, String(userId));
+      return res.json({ userRating });
+    } catch {
+      return res.json({ userRating: null });
+    }
+  });
+
   // Analyze PDF to auto-fill metadata (Gemini AI with Local Heuristic Fallback)
   router.post('/extract-metadata', upload.single('pdf'), async (req, res) => {
     try {

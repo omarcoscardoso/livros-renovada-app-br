@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { getDatabase } from '../src/server/db/database';
 import { SqliteUserRepository } from '../src/server/repositories/userRepository';
+import { SqliteBookRepository } from '../src/server/repositories/bookRepository';
 
 describe('Segurança, Autenticação Google e Administração', () => {
   let tempDbPath: string;
@@ -112,5 +113,63 @@ describe('Segurança, Autenticação Google e Administração', () => {
     const token = userRepo.createSession(user.id, 1);
     const sessionUser = userRepo.getUserBySessionToken(token);
     expect(sessionUser).toBeNull(); // Usuários bloqueados não conseguem sessão ativa
+  });
+
+  it('deve permitir ao admin definir e desmarcar destaque editorial (isFeatured)', () => {
+    const db = getDatabase(tempDbPath);
+    const bookRepo = new SqliteBookRepository(db);
+    bookRepo.seedDefaultBookIfNeeded();
+
+    const initialBook = bookRepo.getBookByIdOrSlug('cell-church-larry-stockstill');
+    expect(initialBook).not.toBeNull();
+    expect(initialBook?.isFeatured).toBe(false);
+
+    // Marcar como destaque editorial
+    const success = bookRepo.setBookFeatured('cell-church-larry-stockstill', true);
+    expect(success).toBe(true);
+
+    const featuredBook = bookRepo.getBookByIdOrSlug('cell-church-larry-stockstill');
+    expect(featuredBook?.isFeatured).toBe(true);
+
+    // Desmarcar destaque editorial
+    bookRepo.setBookFeatured('cell-church-larry-stockstill', false);
+    const unfeaturedBook = bookRepo.getBookByIdOrSlug('cell-church-larry-stockstill');
+    expect(unfeaturedBook?.isFeatured).toBe(false);
+  });
+
+  it('deve gerenciar avaliações reais de usuários e calcular a média ponderada de estrelas', () => {
+    const db = getDatabase(tempDbPath);
+    const bookRepo = new SqliteBookRepository(db);
+    bookRepo.seedDefaultBookIfNeeded();
+
+    const user1 = userRepo.upsertGoogleUser('leitor1@renovada.com.br', 'Leitor Um');
+    const user2 = userRepo.upsertGoogleUser('leitor2@renovada.com.br', 'Leitor Dois');
+
+    const bookId = 'cell-church-larry-stockstill';
+
+    // Inicialmente sem avaliações de usuário
+    const initialUserRating = bookRepo.getUserRating(bookId, user1.id);
+    expect(initialUserRating).toBeNull();
+
+    // Leitor 1 avalia com 5 estrelas
+    const rate1Result = bookRepo.rateBook(bookId, user1.id, 5);
+    expect(rate1Result.rating).toBe(5.0);
+    expect(rate1Result.reviewsCount).toBe(1);
+
+    // Leitor 2 avalia com 4 estrelas
+    const rate2Result = bookRepo.rateBook(bookId, user2.id, 4);
+    expect(rate2Result.rating).toBe(4.5);
+    expect(rate2Result.reviewsCount).toBe(2);
+
+    // Verificar se o livro retorna a nota e contagem reais
+    const updatedBook = bookRepo.getBookByIdOrSlug(bookId);
+    expect(updatedBook?.rating).toBe(4.5);
+    expect(updatedBook?.reviewsCount).toBe(2);
+
+    // Leitor 1 atualiza sua nota para 3 estrelas (média (3 + 4) / 2 = 3.5)
+    const updateResult = bookRepo.rateBook(bookId, user1.id, 3);
+    expect(updateResult.rating).toBe(3.5);
+    expect(updateResult.reviewsCount).toBe(2);
+    expect(bookRepo.getUserRating(bookId, user1.id)).toBe(3);
   });
 });

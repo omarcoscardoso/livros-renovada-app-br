@@ -75,9 +75,11 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
     ? 'text-[#7d6851]'
     : 'text-slate-500';
 
-  const rating = book.rating || 4.9;
-  const reviewsCount = book.reviewsCount || 184;
-  const rankingText = book.rankingText || '#01 Mais Lido na Biblioteca';
+  const hasRating = typeof book.rating === 'number' && book.rating > 0;
+  const rating = hasRating ? book.rating.toFixed(1) : null;
+  const reviewsCount = typeof book.reviewsCount === 'number' ? book.reviewsCount : 0;
+  const starTextColor = isSepia ? 'text-[#92400E]' : 'text-[#FF7A00]';
+  const rankingText = book.rankingText || (hasRating ? '#01 Mais Lido na Biblioteca' : 'Lançamento Lumi');
   const totalCh = Math.max(1, book.chapterCount);
   const estimatedPages = book.pageCount || Math.round(totalCh * 18);
   const isCompleted = readCount >= totalCh;
@@ -225,12 +227,16 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
 
               {/* Star Rating & Review Count */}
               <div className="flex items-center justify-center sm:justify-start gap-2 pt-1 text-xs">
-                <div className="flex items-center text-amber-400">
+                <div className={`flex items-center ${starTextColor}`}>
                   <Star className="w-4 h-4 fill-current" />
-                  <span className="font-bold ml-1 text-slate-900 dark:text-slate-100">{rating}</span>
+                  <span className="font-bold ml-1 text-current">{hasRating ? rating : 'Novo'}</span>
                 </div>
                 <span className={mutedText}>•</span>
-                <span className={mutedText}>({reviewsCount} avaliações)</span>
+                <span className={mutedText}>
+                  {hasRating
+                    ? `(${reviewsCount} ${reviewsCount === 1 ? 'avaliação' : 'avaliações'})`
+                    : '(Sem avaliações)'}
+                </span>
                 {book.category && (
                   <>
                     <span className={mutedText}>•</span>
