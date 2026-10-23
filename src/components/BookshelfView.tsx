@@ -18,9 +18,6 @@ import {
   Library,
   Grid3X3,
   List,
-  SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight,
   X,
   ShieldAlert,
   LogIn,
@@ -33,7 +30,7 @@ import { ReaderTheme } from './Navbar';
 import { ReadChaptersMap } from '../utils/readingProgressStorage';
 import { useAuth } from '../context/AuthContext';
 
-export type BookshelfViewMode = 'grid' | 'list' | 'carousel';
+export type BookshelfViewMode = 'grid' | 'list';
 
 interface BookshelfViewProps {
   books: BookSummary[];
@@ -76,13 +73,11 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
   const [viewMode, setViewMode] = useState<BookshelfViewMode>(() => {
     try {
       const saved = localStorage.getItem('ipr_bookshelf_view_mode') as BookshelfViewMode | null;
-      return saved === 'list' || saved === 'carousel' ? saved : 'grid';
+      return saved === 'list' ? 'list' : 'grid';
     } catch {
       return 'grid';
     }
   });
-
-  const [carouselIndex, setCarouselIndex] = useState(0);
 
   const isDark = theme === 'dark';
   const isSepia = theme === 'sepia';
@@ -183,27 +178,6 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
       String(b.originalYear).includes(raw)
     );
   });
-
-  // Carousel boundary check
-  useEffect(() => {
-    if (carouselIndex >= filteredBooks.length) {
-      setCarouselIndex(Math.max(0, filteredBooks.length - 1));
-    }
-  }, [filteredBooks.length, carouselIndex]);
-
-  // Keyboard navigation for Carousel view
-  useEffect(() => {
-    if (viewMode !== 'carousel') return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        setCarouselIndex((prev) => Math.max(0, prev - 1));
-      } else if (e.key === 'ArrowRight') {
-        setCarouselIndex((prev) => Math.min(filteredBooks.length - 1, prev + 1));
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, filteredBooks.length]);
 
   const totalReadChaptersAcrossLibrary = books.reduce((sum, b) => {
     const readForBook = readChaptersMap[b.id]?.length || 0;
@@ -371,30 +345,20 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                     viewMode === 'grid' ? pillActive : pillInactive
                   }`}
-                  title="Visão Padrão em Grade de Capas"
+                  title="Visão Padrão em Grade"
                 >
                   <Grid3X3 className="w-4 h-4" />
-                  <span className="hidden md:inline">Padrão</span>
+                  <span className="hidden md:inline">Grade</span>
                 </button>
                 <button
                   onClick={() => handleSetViewMode('list')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                     viewMode === 'list' ? pillActive : pillInactive
                   }`}
-                  title="Visão em Lista com Capas em Destaque"
+                  title="Visão em Lista Minimalista"
                 >
                   <List className="w-4 h-4" />
                   <span className="hidden md:inline">Lista</span>
-                </button>
-                <button
-                  onClick={() => handleSetViewMode('carousel')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                    viewMode === 'carousel' ? pillActive : pillInactive
-                  }`}
-                  title="Visão em Carrossel de Capas (Cover Flow)"
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  <span className="hidden md:inline">Carrossel</span>
                 </button>
               </div>
             </div>
@@ -538,27 +502,25 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
 
                       {/* Details */}
                       <div className="min-w-0 flex-1 space-y-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {isCompleted ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-500 border border-emerald-500/30">
-                              <CheckCircle2 className="w-3 h-3" /> Concluído
-                            </span>
-                          ) : readCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30">
-                              Em andamento ({readPercent}%)
-                            </span>
-                          ) : (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-current/20 ${mutedText}`}>
-                              Disponível
-                            </span>
-                          )}
+                        {(isCompleted || readCount > 0 || isProcessing) && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isCompleted ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-500 border border-emerald-500/30">
+                                <CheckCircle2 className="w-3 h-3" /> Concluído
+                              </span>
+                            ) : readCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30">
+                                Em andamento ({readPercent}%)
+                              </span>
+                            ) : null}
 
-                          {isProcessing && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 animate-pulse">
-                              <Loader2 className="w-3 h-3 animate-spin" /> Convertendo
-                            </span>
-                          )}
-                        </div>
+                            {isProcessing && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 animate-pulse">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Convertendo
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         <h3
                           onClick={() => !isProcessing && onSelectBook(book.id)}
@@ -693,9 +655,9 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
           </div>
         )}
 
-        {/* VIEW MODE 2: LISTA COM CAPAS EM DESTAQUE (Requirement 2) */}
+        {/* VIEW MODE: LISTA MINIMALISTA (Foco em Capa, Título e Autor) */}
         {viewMode === 'list' && (
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             {filteredBooks.map((book) => {
               const isDefault = book.id === 'cell-church-larry-stockstill';
               const isProcessing = book.status === 'processing';
@@ -710,15 +672,16 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
               return (
                 <div
                   key={book.id}
-                  className={`rounded-2xl border p-4 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 transition-all ${cardBg}`}
+                  className={`group rounded-xl border p-3 sm:p-3.5 flex items-center justify-between gap-3 sm:gap-4 transition-all duration-150 ${cardBg}`}
                 >
-                  {/* Left: Large Highlighted Cover + Info */}
-                  <div className="flex items-center gap-5 min-w-0 flex-1">
-                    <button
-                      onClick={() => !isProcessing && onSelectBook(book.id)}
-                      disabled={isProcessing}
-                      className={`relative w-28 h-40 sm:w-32 sm:h-44 rounded-xl border overflow-hidden shrink-0 shadow-lg cursor-pointer transition-transform hover:scale-105 ${coverGradient}`}
-                      title={`Abrir "${book.titlePt}"`}
+                  {/* Left: Cover + Title & Author (Clickable) */}
+                  <div
+                    onClick={() => !isProcessing && onSelectBook(book.id)}
+                    className="flex items-center gap-3.5 sm:gap-4 min-w-0 flex-1 cursor-pointer"
+                  >
+                    {/* Minimalist Cover Thumbnail */}
+                    <div
+                      className={`relative w-12 h-16 sm:w-14 sm:h-20 rounded-md border overflow-hidden shrink-0 shadow-sm transition-transform group-hover:scale-105 ${coverGradient}`}
                     >
                       {book.coverImageUrl ? (
                         <>
@@ -727,289 +690,90 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
                             alt={book.titlePt}
                             className="w-full h-full object-cover bg-white"
                           />
-                          <div className="pointer-events-none absolute inset-y-0 left-0 w-3 bg-gradient-to-r from-black/40 via-white/20 to-transparent" />
+                          <div className="pointer-events-none absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/30 via-white/10 to-transparent" />
                         </>
                       ) : (
-                        <div className="p-3 flex flex-col justify-between h-full text-left">
-                          <BookOpen className="w-5 h-5 text-amber-400" />
-                          <div>
-                            <p className="text-xs font-bold leading-tight line-clamp-3">{book.titlePt}</p>
-                            <p className="text-[10px] opacity-80 truncate">{book.author}</p>
-                          </div>
+                        <div className="p-1.5 flex flex-col justify-between h-full text-left">
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <p className="text-[8px] font-bold leading-tight line-clamp-2">{book.titlePt}</p>
                         </div>
                       )}
-                    </button>
+                    </div>
 
-                    <div className="space-y-2 min-w-0 flex-1">
+                    {/* Clean Minimalist Typography: Title + Author */}
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-bold font-editorial group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors line-clamp-1">
+                          {book.titlePt}
+                        </h3>
+
+                        {/* Subtle Status indicator only when applicable (sem badge Disponível) */}
                         {isCompleted ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-500 border border-emerald-500/30">
-                            <CheckCircle2 className="w-3 h-3" /> Leitura Concluída
+                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 shrink-0">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Concluído
                           </span>
                         ) : readCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">
-                            Em andamento ({readPercent}%)
+                          <span className="inline-flex items-center px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+                            {readPercent}%
                           </span>
-                        ) : (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-current/20 ${mutedText}`}>
-                            Disponível
+                        ) : null}
+
+                        {isProcessing && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 animate-pulse shrink-0">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" /> Convertendo
                           </span>
                         )}
-                        <span className={`text-xs ${mutedText}`}>
-                          Publicado em <strong>{book.originalYear}</strong>
-                        </span>
                       </div>
 
-                      <h3
-                        onClick={() => !isProcessing && onSelectBook(book.id)}
-                        className="text-lg sm:text-xl font-bold font-editorial cursor-pointer hover:text-amber-500 transition-colors line-clamp-1"
-                      >
-                        {book.titlePt}
-                      </h3>
-
-                      {book.subtitlePt && (
-                        <p className={`text-xs sm:text-sm italic font-editorial line-clamp-2 ${mutedText}`}>
-                          {book.subtitlePt}
-                        </p>
-                      )}
-
-                      <p className="text-xs font-semibold">
-                        Autor: <span className="text-amber-600 dark:text-amber-400">{book.author}</span>
-                        {book.publisher && (
-                          <span className={`font-normal ${mutedText} hidden sm:inline`}> • {book.publisher}</span>
-                        )}
+                      <p className={`text-xs sm:text-sm font-medium ${mutedText} truncate`}>
+                        {book.author}
                       </p>
-
-                      {/* Progress Bar inside list */}
-                      <div className="max-w-md space-y-1 pt-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className={mutedText}>
-                            {book.chapterCount} capítulos (~{book.totalEstimatedMinutes} min de leitura)
-                          </span>
-                          <span className="font-mono font-semibold">
-                            {readCount}/{book.chapterCount} ({readPercent}%)
-                          </span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-                          <div
-                            className={`h-full ${isCompleted ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                            style={{ width: `${readPercent}%` }}
-                          />
-                        </div>
-                      </div>
                     </div>
                   </div>
 
-                  {/* Right Actions */}
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center w-full md:w-auto justify-end">
+                  {/* Right Actions: Clean, compact and unobtrusive */}
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                     <button
                       onClick={() => onSelectBook(book.id)}
                       disabled={isProcessing}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm cursor-pointer shadow-md"
+                      className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                      title={readCount > 0 ? 'Continuar Leitura' : 'Iniciar Leitura'}
                     >
-                      <BookOpen className="w-4 h-4" />
-                      <span>{readCount > 0 ? 'Continuar' : 'Iniciar'}</span>
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline">{readCount > 0 ? 'Continuar' : 'Ler'}</span>
                     </button>
 
                     {book.hasOriginalPdf && (
                       <button
                         onClick={() => onOpenPdfForBook(book.id)}
-                        className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-rose-500 cursor-pointer"
+                        className="p-1.5 sm:p-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-rose-500 cursor-pointer transition-colors"
                         title="Ver PDF Original"
                       >
-                        <FileText className="w-4 h-4" />
+                        <FileText className="w-3.5 h-3.5" />
                       </button>
                     )}
 
                     <button
                       onClick={() => handleEditClick(book.id)}
-                      className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                      title="Editar"
+                      className="p-1.5 sm:p-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-amber-500 cursor-pointer transition-colors"
+                      title="Editar Metadados e Capítulos"
                     >
-                      <Edit3 className="w-4 h-4" />
+                      <Edit3 className="w-3.5 h-3.5" />
                     </button>
 
                     {!isDefault && isAdmin && (
                       <button
                         onClick={() => onDeleteBook(book.id)}
-                        className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-rose-500/15 text-rose-500 cursor-pointer"
-                        title="Excluir"
+                        className="p-1.5 sm:p-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-rose-500/15 text-rose-500 cursor-pointer transition-colors"
+                        title="Excluir da Estante"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                 </div>
               );
             })}
-          </div>
-        )}
-
-        {/* VIEW MODE 3: CARROSSEL 3D / COVER FLOW (Requirement 2) */}
-        {viewMode === 'carousel' && filteredBooks.length > 0 && (
-          <div className="space-y-8 py-4">
-            {/* 3D Carousel Stage */}
-            <div className="relative flex flex-col items-center justify-center min-h-[460px] select-none">
-              <div className="flex items-center justify-center gap-4 sm:gap-8 w-full max-w-4xl overflow-hidden py-6">
-                {/* Previous Button */}
-                <button
-                  onClick={() => setCarouselIndex((prev) => Math.max(0, prev - 1))}
-                  disabled={carouselIndex === 0}
-                  className="p-3 rounded-full bg-black/10 dark:bg-white/10 hover:bg-amber-500 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer z-10 shrink-0"
-                  title="Livro Anterior (Seta Esquerda)"
-                >
-                  <ChevronLeft className="w-6 h-6" />
-                </button>
-
-                {/* Cover Flow Items */}
-                <div className="flex items-center justify-center gap-4 sm:gap-6 flex-1">
-                  {filteredBooks.map((book, idx) => {
-                    const diff = idx - carouselIndex;
-                    if (Math.abs(diff) > 2) return null; // Show 5 active books in perspective
-
-                    const isActive = diff === 0;
-                    const coverGradient = COVER_STYLES[book.coverColor] || COVER_STYLES.amber;
-
-                    return (
-                      <div
-                        key={book.id}
-                        onClick={() => setCarouselIndex(idx)}
-                        className={`transition-all duration-300 transform cursor-pointer flex flex-col items-center ${
-                          isActive
-                            ? 'scale-110 z-20 opacity-100'
-                            : Math.abs(diff) === 1
-                            ? 'scale-90 z-10 opacity-60 hover:opacity-90'
-                            : 'scale-75 z-0 opacity-30 hidden sm:flex'
-                        }`}
-                        style={{
-                          transform: `perspective(1000px) rotateY(${diff * -18}deg) scale(${
-                            isActive ? 1.15 : 0.85
-                          })`,
-                        }}
-                      >
-                        <div
-                          className={`relative w-40 h-60 sm:w-52 sm:h-72 rounded-2xl overflow-hidden border-2 shadow-2xl transition-all ${
-                            isActive
-                              ? 'border-amber-500 shadow-amber-500/20 ring-4 ring-amber-500/20'
-                              : 'border-black/20 dark:border-white/20'
-                          } ${coverGradient}`}
-                        >
-                          {book.coverImageUrl ? (
-                            <>
-                              <img
-                                src={book.coverImageUrl}
-                                alt={book.titlePt}
-                                className="w-full h-full object-cover bg-white"
-                              />
-                              <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-black/40 via-white/20 to-transparent" />
-                            </>
-                          ) : (
-                            <div className="p-4 flex flex-col justify-between h-full text-left">
-                              <BookOpen className="w-6 h-6 text-amber-400" />
-                              <div className="space-y-1">
-                                <p className="text-sm font-bold leading-snug line-clamp-3">{book.titlePt}</p>
-                                <p className="text-xs opacity-80 truncate">{book.author}</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <p className={`mt-3 text-xs font-bold text-center max-w-[160px] truncate ${isActive ? 'text-amber-500' : mutedText}`}>
-                          {book.titlePt}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Next Button */}
-                <button
-                  onClick={() => setCarouselIndex((prev) => Math.min(filteredBooks.length - 1, prev + 1))}
-                  disabled={carouselIndex === filteredBooks.length - 1}
-                  className="p-3 rounded-full bg-black/10 dark:bg-white/10 hover:bg-amber-500 hover:text-slate-950 disabled:opacity-20 transition-all cursor-pointer z-10 shrink-0"
-                  title="Próximo Livro (Seta Direita)"
-                >
-                  <ChevronRight className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* Active Book Detail Card underneath the Carousel */}
-              {filteredBooks[carouselIndex] && (
-                <div className={`w-full max-w-2xl rounded-3xl border p-6 text-center space-y-4 shadow-xl ${cardBg}`}>
-                  {(() => {
-                    const activeBook = filteredBooks[carouselIndex];
-                    const readForBook = readChaptersMap[activeBook.id] || [];
-                    const readCount = readForBook.length;
-                    const totalCh = Math.max(1, activeBook.chapterCount);
-                    const readPercent = Math.min(100, Math.round((readCount / totalCh) * 100));
-
-                    return (
-                      <>
-                        <div className="space-y-1.5">
-                          <span className="text-[11px] font-mono uppercase tracking-wider text-amber-500 font-bold">
-                            Livro Selecionado no Carrossel ({carouselIndex + 1} de {filteredBooks.length})
-                          </span>
-                          <h3 className="text-2xl font-bold font-editorial">{activeBook.titlePt}</h3>
-                          {activeBook.subtitlePt && (
-                            <p className={`text-sm italic font-editorial ${mutedText}`}>
-                              {activeBook.subtitlePt}
-                            </p>
-                          )}
-                          <p className="text-sm font-semibold pt-1">
-                            {activeBook.author} • {activeBook.originalYear}
-                          </p>
-                        </div>
-
-                        {/* Progress */}
-                        <div className="max-w-md mx-auto space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className={mutedText}>Progresso de leitura:</span>
-                            <span className="font-mono font-semibold">
-                              {readCount} de {activeBook.chapterCount} capítulos ({readPercent}%)
-                            </span>
-                          </div>
-                          <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-                            <div
-                              className="h-full bg-amber-500 transition-all duration-300"
-                              style={{ width: `${readPercent}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center justify-center gap-3 pt-2">
-                          <button
-                            onClick={() => onSelectBook(activeBook.id)}
-                            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 cursor-pointer transition-transform hover:scale-105"
-                          >
-                            <BookOpen className="w-4 h-4" />
-                            <span>{readCount > 0 ? 'Continuar Leitura' : 'Abrir para Ler'}</span>
-                          </button>
-
-                          {activeBook.hasOriginalPdf && (
-                            <button
-                              onClick={() => onOpenPdfForBook(activeBook.id)}
-                              className="p-3 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-rose-500 cursor-pointer"
-                              title="Ver PDF Original"
-                            >
-                              <FileText className="w-5 h-5" />
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => handleEditClick(activeBook.id)}
-                            className="p-3 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                            title="Editar Livro"
-                          >
-                            <Edit3 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </main>
