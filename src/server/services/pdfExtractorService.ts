@@ -23,6 +23,33 @@ export interface ExtractedCoverResult {
   pageNumber: number;
 }
 
+export interface ExtractedLocalMetadata {
+  titlePt: string;
+  titleEn?: string;
+  subtitlePt?: string;
+  author: string;
+  originalYear: number;
+  publisher?: string;
+  synopsis?: string;
+  category?: string;
+  source: 'local';
+}
+
+function formatTitleCase(text: string): string {
+  if (!text) return '';
+  const minorWords = new Set(['de', 'da', 'do', 'das', 'dos', 'em', 'e', 'of', 'and', 'the', 'in', 'a', 'an', 'por', 'by']);
+  return text
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, index) => {
+      if (index > 0 && minorWords.has(word)) {
+        return word;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+}
+
 export class PdfExtractorService {
   private storageService: IStorageService;
 
@@ -51,6 +78,170 @@ export class PdfExtractorService {
       totalPages: totalPages || pages.length,
       pages,
       fullText: pages.join('\n\n'),
+    };
+  }
+
+  /**
+   * Fast, reliable local heuristic metadata extraction from PDF properties and first pages.
+   * Runs in milliseconds without requiring external API keys.
+   */
+  public async extractLocalMetadata(
+    pdfInput: string | Buffer | Uint8Array,
+    originalFilename?: string
+  ): Promise<ExtractedLocalMetadata> {
+    const buffer = await this.toBuffer(pdfInput);
+
+    const { pages } = await this.extractPdfPages(Buffer.from(buffer));
+    const firstPagesText = pages.slice(0, 6).join('\n\n');
+
+    let docMeta: any = null;
+    try {
+      const pdf = await getDocumentProxy(new Uint8Array(buffer));
+      docMeta = await pdf.getMetadata();
+    } catch {
+      // Ignore metadata read error, continue with text
+    }
+
+    // 1. Year Extraction (copyright / publication date)
+    let originalYear = new Date().getFullYear();
+    const copyrightMatch =
+      firstPagesText.match(/(?:©|\(c\)|copyright)\s*(19\d{2}|20\d{2})/i) ||
+      firstPagesText.match(/\b(19\d{2}|20\d{2})\b/);
+    if (copyrightMatch) {
+      originalYear = parseInt(copyrightMatch[1], 10);
+    } else if (docMeta?.info?.CreationDate) {
+      const dateStr = String(docMeta.info.CreationDate);
+      const match = dateStr.match(/(19\d{2}|20\d{2})/);
+      if (match) {
+        originalYear = parseInt(match[1], 10);
+      }
+    }
+
+    // 2. Author Extraction
+    let author = '';
+    const authorPatterns = [
+      /(?:by|por|autor|author)(?::|\s)\s*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]{2,35})/i,
+      /(?:by|por)\s*\n+([A-ZÀ-Ú\s]{3,35})\b/i,
+      /(?:©|\(c\))\s*\d{4}\s+by\s+([A-ZÀ-Úa-zà-ú\s]{3,35})/i,
+    ];
+
+    for (const pat of authorPatterns) {
+      const m = firstPagesText.match(pat);
+      if (m && m[1]) {
+        const candidate = m[1].split('\n')[0].trim().replace(/[.,;]+$/, '');
+        if (
+          candidate.length >= 3 &&
+          !/chapter|copyright|rights|editora|publishing|press|books|livros|inc|ltda|corp/i.test(candidate)
+        ) {
+          author = formatTitleCase(candidate);
+          break;
+        }
+      }
+    }
+
+    if (!author && docMeta?.info?.Author) {
+      const rawAuthor = String(docMeta.info.Author).trim();
+      const genericAuthors = ['writer', 'admin', 'user', 'openoffice', 'microsoft', 'word', 'zoran'];
+      if (rawAuthor.length >= 3 && !genericAuthors.includes(rawAuthor.toLowerCase())) {
+        author = formatTitleCase(rawAuthor);
+      }
+    }
+
+    // 3. Title Extraction
+    let titlePt = '';
+    const cleanFilename = originalFilename
+      ? originalFilename
+          .replace(/\.pdf$/i, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\b[0-9a-f]{6,}\b/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      : '';
+
+    // Check prominent title line in first pages
+    for (let i = 0; i < Math.min(3, pages.length); i++) {
+      const lines = pages[i]
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 2 && !/^\d+$/.test(l) && !/^page\s+\d+/i.test(l));
+
+      if (lines.length > 0) {
+        const firstLine = lines[0];
+        if (firstLine.length >= 3 && firstLine.length <= 60 && !/copyright|isbn|todos os direitos/i.test(firstLine)) {
+          titlePt = formatTitleCase(firstLine);
+          break;
+        }
+      }
+    }
+
+    if (!titlePt && docMeta?.info?.Title) {
+      const rawTitle = String(docMeta.info.Title).trim();
+      if (rawTitle.length >= 3 && !/untitled|document/i.test(rawTitle)) {
+        titlePt = formatTitleCase(rawTitle);
+      }
+    }
+
+    if (!titlePt && cleanFilename) {
+      // If filename has "Title - Author" format
+      if (cleanFilename.includes(' - ')) {
+        const parts = cleanFilename.split(' - ');
+        titlePt = formatTitleCase(parts[0].trim());
+        if (!author && parts[1]) {
+          author = formatTitleCase(parts[1].trim());
+        }
+      } else {
+        titlePt = formatTitleCase(cleanFilename);
+      }
+    }
+
+    if (!author && cleanFilename && cleanFilename.includes(' - ')) {
+      const parts = cleanFilename.split(' - ');
+      if (parts[1]) {
+        author = formatTitleCase(parts[1].trim());
+      }
+    }
+
+    if (!titlePt) titlePt = 'Livro sem Título';
+    if (!author) author = 'Autor Desconhecido';
+
+    // 4. Publisher Extraction
+    let publisher = 'Edição Digital — Biblioteca IPR Viamão';
+    const pubMatch = firstPagesText.match(/(?:published by|publicado por|editora)\s+([A-ZÀ-Úa-zà-ú0-9\s,.-]{3,60})/i);
+    if (pubMatch && pubMatch[1]) {
+      publisher = pubMatch[1].split('\n')[0].trim().replace(/[.,;]+$/, '');
+    }
+
+    // 5. Category & Synopsis detection
+    let category = 'Vida Cristã';
+    let synopsis = `Obra "${titlePt}" de ${author}. Leitura e estudo bíblico selecionado para edificação da igreja e fortalecimento espiritual.`;
+
+    const normalized = (firstPagesText + ' ' + titlePt)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    if (normalized.includes('celula') || normalized.includes('cell group') || normalized.includes('pequeno grupo')) {
+      category = 'Células';
+      synopsis = `Estudo fundamental sobre a visão e dinâmica da igreja em células e pequenos grupos.`;
+    } else if (normalized.includes('lider') || normalized.includes('lideranca') || normalized.includes('leadership')) {
+      category = 'Liderança';
+      synopsis = `Princípios essenciais para formação, mentoria e capacitação de líderes ministeriais.`;
+    } else if (normalized.includes('discipulado') || normalized.includes('disciple')) {
+      category = 'Discipulado';
+      synopsis = `Guia prático para acompanhamento espiritual, consolidação e formação de discípulos de Jesus Cristo.`;
+    } else if (normalized.includes('teologia') || normalized.includes('doutrina') || normalized.includes('theology')) {
+      category = 'Teologia';
+      synopsis = `Fundamentos teológicos e doutrinários para aprofundamento das Escrituras Sagradas.`;
+    }
+
+    return {
+      titlePt,
+      author,
+      originalYear,
+      publisher,
+      synopsis,
+      category,
+      source: 'local',
     };
   }
 

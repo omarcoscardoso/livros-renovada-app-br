@@ -591,8 +591,17 @@ Público-alvo: ${params.audience || 'Geral (Jovens e Adultos)'}`;
 
   public async extractMetadataWithAi(
     pagesText: string,
-    pdfBase64?: string | null,
-    overrideApiKey?: string
+    overrideApiKey?: string,
+    fallbackMetadata?: {
+      titlePt?: string;
+      titleEn?: string;
+      subtitlePt?: string;
+      author?: string;
+      originalYear?: number;
+      publisher?: string;
+      synopsis?: string;
+      category?: string;
+    }
   ): Promise<{
     titlePt: string;
     titleEn?: string;
@@ -602,62 +611,89 @@ Público-alvo: ${params.audience || 'Geral (Jovens e Adultos)'}`;
     publisher?: string;
     synopsis?: string;
     category?: string;
+    source: 'gemini' | 'local';
+    error?: string;
   }> {
     const client = this.getClient(overrideApiKey);
     if (!client) {
-      throw new Error('GEMINI_KEY_MISSING');
+      return {
+        titlePt: fallbackMetadata?.titlePt || 'Novo Livro',
+        titleEn: fallbackMetadata?.titleEn,
+        subtitlePt: fallbackMetadata?.subtitlePt,
+        author: fallbackMetadata?.author || 'Autor Desconhecido',
+        originalYear: fallbackMetadata?.originalYear || new Date().getFullYear(),
+        publisher: fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        synopsis: fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
+        category: fallbackMetadata?.category || 'Vida Cristã',
+        source: 'local',
+      };
     }
 
-    const contents: any[] = [];
-    if (pdfBase64) {
-      contents.push({
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: pdfBase64,
-        },
-      });
-    }
-
-    contents.push({
-      text: `Você é um editor literário experiente e bibliotecário digital.
-Analise a capa, folha de rosto, ficha catalográfica e amostra de páginas deste livro em PDF para identificar e traduzir com máxima fidelidade os metadados da obra para o Português do Brasil:
+    try {
+      const prompt = `Você é um editor literário experiente e bibliotecário digital.
+Analise a amostra de texto das primeiras páginas deste livro em PDF (capa, folha de rosto, ficha catalográfica e sumário) para identificar e traduzir com máxima fidelidade os metadados da obra para o Português do Brasil:
 - Título principal em Português
 - Título original (se houver)
 - Subtítulo (se houver)
 - Autor(es)
 - Ano original de publicação
 - Editora (publisher)
-- Sinopse (2 a 4 frases cativantes resumindo a mensagem central)
-- Categoria temática principal (ex: Liderança, Células, Discipulado, Teologia, Biografias, Vida Cristã).
+- Sinopse (2 a 4 frases cativantes resumindo a mensagem central para o leitor cristão)
+- Categoria temática principal (escolha exatamente uma entre: Liderança, Células, Discipulado, Teologia, Biografias, Vida Cristã).
 
 Amostra de texto das primeiras páginas:
-${pagesText.slice(0, 15000)}`,
-    });
+${pagesText.slice(0, 20000)}`;
 
-    const METADATA_EXTRACTION_JSON_SCHEMA = {
-      type: 'object',
-      properties: {
-        titlePt: { type: 'string', description: 'Título em Português do Brasil.' },
-        titleEn: { type: 'string', description: 'Título original ou em inglês.' },
-        subtitlePt: { type: 'string', description: 'Subtítulo da obra em Português.' },
-        author: { type: 'string', description: 'Nome completo do autor ou autores.' },
-        originalYear: { type: 'integer', description: 'Ano de publicação.' },
-        publisher: { type: 'string', description: 'Editora.' },
-        synopsis: { type: 'string', description: 'Sinopse editorial clara e densa em Português.' },
-        category: { type: 'string', description: 'Categoria temática.' },
-      },
-      required: ['titlePt', 'author', 'originalYear', 'synopsis'],
-    };
+      const METADATA_EXTRACTION_JSON_SCHEMA = {
+        type: 'object',
+        properties: {
+          titlePt: { type: 'string', description: 'Título em Português do Brasil.' },
+          titleEn: { type: 'string', description: 'Título original ou em inglês.' },
+          subtitlePt: { type: 'string', description: 'Subtítulo da obra em Português.' },
+          author: { type: 'string', description: 'Nome completo do autor ou autores.' },
+          originalYear: { type: 'integer', description: 'Ano de publicação.' },
+          publisher: { type: 'string', description: 'Editora.' },
+          synopsis: { type: 'string', description: 'Sinopse editorial clara e cativante em Português.' },
+          category: { type: 'string', description: 'Categoria temática.' },
+        },
+        required: ['titlePt', 'author', 'originalYear', 'synopsis'],
+      };
 
-    const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: contents,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: METADATA_EXTRACTION_JSON_SCHEMA,
-      },
-    });
+      const response = await client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: METADATA_EXTRACTION_JSON_SCHEMA,
+        },
+      });
 
-    return JSON.parse(response.text || '{}');
+      const parsed = JSON.parse(response.text || '{}');
+      return {
+        titlePt: parsed.titlePt || fallbackMetadata?.titlePt || 'Novo Livro',
+        titleEn: parsed.titleEn || fallbackMetadata?.titleEn,
+        subtitlePt: parsed.subtitlePt || fallbackMetadata?.subtitlePt,
+        author: parsed.author || fallbackMetadata?.author || 'Autor Desconhecido',
+        originalYear: Number(parsed.originalYear) || fallbackMetadata?.originalYear || new Date().getFullYear(),
+        publisher: parsed.publisher || fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        synopsis: parsed.synopsis || fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
+        category: parsed.category || fallbackMetadata?.category || 'Vida Cristã',
+        source: 'gemini',
+      };
+    } catch (err: any) {
+      console.warn('Erro ao chamar Gemini para metadados, revertendo para metadados locais:', err?.message || err);
+      return {
+        titlePt: fallbackMetadata?.titlePt || 'Novo Livro',
+        titleEn: fallbackMetadata?.titleEn,
+        subtitlePt: fallbackMetadata?.subtitlePt,
+        author: fallbackMetadata?.author || 'Autor Desconhecido',
+        originalYear: fallbackMetadata?.originalYear || new Date().getFullYear(),
+        publisher: fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        synopsis: fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
+        category: fallbackMetadata?.category || 'Vida Cristã',
+        source: 'local',
+        error: err?.message,
+      };
+    }
   }
 }

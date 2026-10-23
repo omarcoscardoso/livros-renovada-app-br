@@ -245,4 +245,22 @@ describe('Biblioteca Digital & Conversor PDF', () => {
       'The_Cell_Church_-_Larry_Stockstill_020021f2.pdf'
     );
   });
+
+  it('deve extrair metadados locais de um PDF (título, autor, ano, editora e categoria)', async () => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    doc.text('LIDERANCA EFICAZ', 20, 30);
+    doc.text('by Dr. John Maxwell', 20, 50);
+    doc.text('Copyright (c) 2018 by Maxwell Publishing', 20, 70);
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+    const metadata = await extractor.extractLocalMetadata(pdfBuffer, 'Lideranca_Eficaz.pdf');
+
+    expect(metadata.titlePt).toContain('Lideranca Eficaz');
+    expect(metadata.author).toContain('Dr. John Maxwell');
+    expect(metadata.originalYear).toBe(2018);
+    expect(metadata.category).toBe('Liderança');
+    expect(metadata.source).toBe('local');
+  });
 });

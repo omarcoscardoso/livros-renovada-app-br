@@ -42,7 +42,13 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
   const [publisher, setPublisher] = useState('Edição Digital — Biblioteca IPR Viamão');
   const [coverColor, setCoverColor] = useState('amber');
   const [customInstructions, setCustomInstructions] = useState('');
-  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
+    try {
+      return localStorage.getItem('livro_app_gemini_key') || '';
+    } catch {
+      return '';
+    }
+  });
   const [showKeyInput, setShowKeyInput] = useState(false);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -53,8 +59,22 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
   // AI-assisted metadata extraction state
   const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
   const [metadataExtracted, setMetadataExtracted] = useState<boolean>(false);
+  const [metadataSource, setMetadataSource] = useState<'gemini' | 'local' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleApiKeyChange = (val: string) => {
+    setApiKeyInput(val);
+    try {
+      if (val.trim()) {
+        localStorage.setItem('livro_app_gemini_key', val.trim());
+      } else {
+        localStorage.removeItem('livro_app_gemini_key');
+      }
+    } catch (e) {
+      console.warn('Erro ao salvar chave local:', e);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -67,6 +87,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
       setConvertingBook(null);
       setIsExtractingMetadata(false);
       setMetadataExtracted(false);
+      setMetadataSource(null);
     }
   }, [isOpen]);
 
@@ -108,31 +129,34 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
     try {
       const formData = new FormData();
       formData.append('pdf', file);
-      if (apiKeyInput.trim()) {
-        formData.append('apiKey', apiKeyInput.trim());
+      const effectiveKey = apiKeyInput.trim();
+      if (effectiveKey) {
+        formData.append('apiKey', effectiveKey);
       }
 
       const res = await fetch('/api/books/extract-metadata', {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Falha ao analisar PDF com IA.');
+        throw new Error(data.error || 'Falha ao analisar PDF.');
       }
 
       if (data.metadata) {
         if (data.metadata.titlePt) setTitlePt(data.metadata.titlePt);
         if (data.metadata.author) setAuthor(data.metadata.author);
-        if (data.metadata.originalYear) setOriginalYear(data.metadata.originalYear);
+        if (data.metadata.originalYear) setOriginalYear(Number(data.metadata.originalYear));
         if (data.metadata.publisher) setPublisher(data.metadata.publisher);
         if (data.metadata.synopsis) setCustomInstructions(data.metadata.synopsis);
+        setMetadataSource(data.source || (effectiveKey ? 'gemini' : 'local'));
         setMetadataExtracted(true);
       }
     } catch (err: any) {
-      console.warn('Extração de metadados com IA:', err);
-      // Don't block upload if metadata extraction fails
+      console.warn('Extração de metadados:', err);
+      setError(err?.message || 'Falha ao analisar metadados do PDF.');
     } finally {
       setIsExtractingMetadata(false);
     }
@@ -147,6 +171,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
     setError(null);
     setSelectedFile(file);
     setMetadataExtracted(false);
+    setMetadataSource(null);
     if (!titlePt.trim()) {
       const cleanName = file.name
         .replace(/\.pdf$/i, '')
@@ -156,7 +181,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
       setTitlePt(cleanName);
     }
 
-    // Auto-trigger metadata extraction with Gemini AI
+    // Auto-trigger metadata extraction with PDF heuristics and Gemini AI
     void handleAutoFillWithAi(file);
   };
 
@@ -185,6 +210,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
 
       const res = await fetch('/api/books/upload', {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
 
@@ -384,7 +410,7 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
 
               {/* AI Metadata Assistant Status / Button */}
               {selectedFile && (
-                <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-800/60 border border-indigo-500/30 text-xs flex items-center justify-between gap-3">
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-800/60 border border-indigo-500/30 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     {isExtractingMetadata ? (
                       <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
@@ -396,15 +422,17 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
                     <div>
                       {isExtractingMetadata ? (
                         <p className="font-semibold text-amber-300">
-                          IA analisando PDF... Identificando título, autor, ano e sinopse.
+                          Identificando título, autor, ano de publicação e sinopse do livro...
                         </p>
                       ) : metadataExtracted ? (
                         <p className="font-semibold text-emerald-300">
-                          Metadados preenchidos por IA a partir do PDF! Você pode revisá-los abaixo.
+                          {metadataSource === 'gemini'
+                            ? '✨ Metadados e sinopse gerados via IA Gemini 2.5 Flash! Você pode revisá-los abaixo.'
+                            : '📄 Metadados extraídos das propriedades e páginas do PDF! Você pode revisá-los abaixo.'}
                         </p>
                       ) : (
                         <p className="font-medium text-slate-300">
-                          Gostaria de preencher os metadados do livro automaticamente com IA?
+                          Preencher metadados automaticamente a partir do arquivo PDF.
                         </p>
                       )}
                     </div>
@@ -414,10 +442,10 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleAutoFillWithAi()}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{metadataExtracted ? 'Reanalisar com IA' : 'Preencher com IA'}</span>
+                      <span>{metadataExtracted ? 'Reanalisar PDF' : 'Preencher com IA'}</span>
                     </button>
                   )}
                 </div>
@@ -544,14 +572,37 @@ export const UploadBookModal: React.FC<UploadBookModalProps> = ({
                 </div>
 
                 {showKeyInput && (
-                  <div className="pt-1">
-                    <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="Cole sua GEMINI_API_KEY aqui para tradução e estruturação avançada via IA..."
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs outline-none focus:border-amber-500"
-                    />
+                  <div className="pt-2 space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={(e) => handleApiKeyChange(e.target.value)}
+                        placeholder="Cole sua GEMINI_API_KEY aqui..."
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs outline-none focus:border-amber-500 font-mono"
+                      />
+                      {selectedFile && apiKeyInput.trim().length > 10 && (
+                        <button
+                          type="button"
+                          onClick={() => handleAutoFillWithAi()}
+                          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 transition-colors cursor-pointer"
+                        >
+                          Aplicar Chave
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Obtenha sua chave gratuita em{' '}
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-amber-400 hover:underline"
+                      >
+                        aistudio.google.com
+                      </a>
+                      . A chave é salva automaticamente no navegador.
+                    </p>
                   </div>
                 )}
               </div>

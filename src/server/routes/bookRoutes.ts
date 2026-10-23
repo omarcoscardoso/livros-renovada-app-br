@@ -76,38 +76,45 @@ export function createBookRouter(
     }
   });
 
-  // Analyze PDF with Gemini AI to auto-fill metadata (Title, Author, Year, Publisher, Synopsis, Category)
-  router.post('/extract-metadata', requireAuth, upload.single('pdf'), async (req, res) => {
+  // Analyze PDF to auto-fill metadata (Gemini AI with Local Heuristic Fallback)
+  router.post('/extract-metadata', upload.single('pdf'), async (req, res) => {
     try {
       const file = req.file;
       if (!file) {
         return res.status(400).json({ error: 'Nenhum arquivo PDF fornecido.' });
       }
 
-      // Extract first 15 pages in memory using PdfExtractorService
+      // 1. Fast local extraction from PDF metadata & text (guarantees fields are never empty)
+      const localMetadata = await extractor.extractLocalMetadata(file.buffer, file.originalname);
+
+      // 2. Extract first 10 pages for Gemini contextual enrichment
       const extracted = await extractor.extractPdfPages(file.buffer);
       const firstPagesText = extracted.pages
-        .slice(0, Math.min(15, extracted.pages.length))
-        .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1200)}`)
+        .slice(0, Math.min(10, extracted.pages.length))
+        .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1500)}`)
         .join('\n\n');
 
-      const isSmallPdf = file.buffer.length <= 10 * 1024 * 1024;
-      const pdfBase64 = isSmallPdf ? file.buffer.toString('base64') : null;
+      const apiKey = (req.body?.apiKey as string)?.trim() || undefined;
 
+      // 3. Enhance with Gemini AI if key is configured, or return local metadata
       const metadata = await conversionService.extractMetadataWithAi(
         firstPagesText,
-        pdfBase64,
-        req.body?.apiKey
+        apiKey,
+        localMetadata
       );
 
-      return res.json({ metadata });
+      return res.json({
+        metadata,
+        source: metadata.source,
+        message:
+          metadata.source === 'gemini'
+            ? 'Metadados e sinopse identificados via IA Gemini 2.5 Flash.'
+            : 'Metadados extraídos das propriedades e páginas do PDF (modo local).',
+      });
     } catch (error: any) {
-      console.error('Erro na extração de metadados com IA:', error);
+      console.error('Erro na extração de metadados:', error);
       return res.status(500).json({
-        error:
-          error?.message === 'GEMINI_KEY_MISSING'
-            ? 'Chave GEMINI_API_KEY não configurada. Configure a chave no painel para habilitar preenchimento automático por IA.'
-            : (error?.message || 'Falha ao analisar metadados do PDF com IA.'),
+        error: error?.message || 'Falha ao analisar metadados do PDF.',
       });
     }
   });
