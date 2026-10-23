@@ -135,8 +135,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           }
         }
 
-        // Category filter
-        if (selectedCategory !== 'Todos') {
+        // Category filter (apenas na aba de catálogo)
+        if (currentTab === 'books' && selectedCategory !== 'Todos') {
           const cat = (b.category || '').toLowerCase();
           const sel = selectedCategory.toLowerCase();
           const matches =
@@ -314,14 +314,6 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 theme={theme}
               />
             )}
-
-            {/* Category Pills (Horizontal Chips) */}
-            <CategoryPills
-              categories={CATEGORIES}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-              theme={theme}
-            />
 
             {/* Popular Books Carousel */}
             {books.length > 0 && (
