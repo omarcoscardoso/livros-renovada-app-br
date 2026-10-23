@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { IUserRepository } from '../repositories/userRepository';
 import { IBookRepository } from '../repositories/bookRepository';
 import { GeminiConversionService } from '../services/geminiConversionService';
+import { getStorageService, IStorageService } from '../services/storageService';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 
 export function createAdminRouter(
   userRepo: IUserRepository,
   bookRepo: IBookRepository,
-  conversionService: GeminiConversionService
+  conversionService: GeminiConversionService,
+  storageService?: IStorageService
 ): Router {
   const router = Router();
 
@@ -147,6 +149,63 @@ export function createAdminRouter(
       return res.status(500).json({ error: error?.message || 'Erro ao alterar destaque editorial.' });
     }
   });
+
+  // Reprocess book via Admin Panel (Supports both /reprocess/:id and /books/:id/reprocess)
+  const handleReprocess = async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const book = bookRepo.getBookByIdOrSlug(req.params.id);
+      if (!book) {
+        return res.status(404).json({ error: 'Livro não encontrado.' });
+      }
+
+      const pdfMeta = bookRepo.getPdfMetadata(book.id);
+      if (!pdfMeta) {
+        return res.status(404).json({ error: 'Arquivo PDF original não encontrado para este livro.' });
+      }
+
+      const effectiveStorage = storageService || getStorageService();
+      const pdfBuffer = await effectiveStorage.getPdfBuffer(pdfMeta.filename);
+      if (!pdfBuffer) {
+        return res.status(404).json({ error: 'Arquivo PDF original não encontrado no storage.' });
+      }
+
+      const { customInstructions, apiKey } = req.body || {};
+      if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 10) {
+        bookRepo.setSetting('gemini_api_key', apiKey.trim());
+      }
+
+      bookRepo.updateBookConversionStatus(
+        book.id,
+        'processing',
+        'Reiniciando conversão inteligente do PDF com IA...',
+        5
+      );
+
+      void conversionService.processUploadedBook(
+        book.id,
+        pdfBuffer,
+        pdfMeta.downloadName,
+        {
+          titlePt: book.titlePt,
+          author: book.author,
+          originalYear: book.originalYear,
+          publisher: book.publisher,
+          coverColor: book.coverColor,
+        },
+        customInstructions,
+        apiKey
+      );
+
+      const updated = bookRepo.getBookByIdOrSlug(book.id);
+      return res.json({ success: true, book: updated });
+    } catch (error: any) {
+      console.error('Erro ao reprocessar livro via admin:', error);
+      return res.status(500).json({ error: error?.message || 'Erro ao reprocessar livro.' });
+    }
+  };
+
+  router.post('/reprocess/:id', handleReprocess);
+  router.post('/books/:id/reprocess', handleReprocess);
 
   return router;
 }

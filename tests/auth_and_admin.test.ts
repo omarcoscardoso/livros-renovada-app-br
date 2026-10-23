@@ -5,6 +5,10 @@ import os from 'node:os';
 import { getDatabase } from '../src/server/db/database';
 import { SqliteUserRepository } from '../src/server/repositories/userRepository';
 import { SqliteBookRepository } from '../src/server/repositories/bookRepository';
+import { createAdminRouter } from '../src/server/routes/adminRoutes';
+import { GeminiConversionService } from '../src/server/services/geminiConversionService';
+import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
+import { InMemoryStorageService } from '../src/server/services/storageService';
 
 describe('Segurança, Autenticação Google e Administração', () => {
   let tempDbPath: string;
@@ -171,5 +175,35 @@ describe('Segurança, Autenticação Google e Administração', () => {
     expect(updateResult.rating).toBe(3.5);
     expect(updateResult.reviewsCount).toBe(2);
     expect(bookRepo.getUserRating(bookId, user1.id)).toBe(3);
+  });
+
+  it('deve disponibilizar as rotas administrativas de reprocessamento no router admin', () => {
+    const db = getDatabase(tempDbPath);
+    const bookRepo = new SqliteBookRepository(db);
+    bookRepo.seedDefaultBookIfNeeded();
+
+    const storage = new InMemoryStorageService();
+    const extractor = new PdfExtractorService(storage);
+    const conversion = new GeminiConversionService(bookRepo, extractor);
+
+    const router = createAdminRouter(userRepo, bookRepo, conversion, storage);
+    expect(router).toBeDefined();
+
+    // Verifica que as rotas de reprocessamento estão registradas
+    const routes = router.stack
+      .filter((layer: any) => layer.route)
+      .map((layer: any) => ({
+        path: layer.route.path,
+        methods: Object.keys(layer.route.methods),
+      }));
+
+    const hasReprocess1 = routes.some(
+      (r: any) => r.path === '/reprocess/:id' && r.methods.includes('post')
+    );
+    const hasReprocess2 = routes.some(
+      (r: any) => r.path === '/books/:id/reprocess' && r.methods.includes('post')
+    );
+    expect(hasReprocess1).toBe(true);
+    expect(hasReprocess2).toBe(true);
   });
 });

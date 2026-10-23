@@ -174,9 +174,29 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
     setReprocessingBookId(bookId);
     setActionFeedback(null);
     try {
-      const res = await fetch(`/api/admin/reprocess/${encodeURIComponent(bookId)}`, {
+      let res = await fetch(`/api/books/${encodeURIComponent(bookId)}/reprocess`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       });
+
+      if (res.status === 404) {
+        res = await fetch(`/api/admin/reprocess/${encodeURIComponent(bookId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          res.ok
+            ? 'Resposta inesperada do servidor.'
+            : `Erro ${res.status}: Servidor não retornou JSON ao reprocessar livro.`
+        );
+      }
+
       const data = await res.json();
       if (res.ok) {
         setActionFeedback('Reprocessamento iniciado em segundo plano com IA Gemini!');
@@ -185,9 +205,9 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
       } else {
         alert(data.error || 'Erro ao reprocessar livro.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao disparar reprocessamento:', err);
-      alert('Falha de conexão com o servidor.');
+      alert(err?.message || 'Falha de conexão com o servidor.');
     } finally {
       setReprocessingBookId(null);
     }

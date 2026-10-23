@@ -72,7 +72,7 @@ export function createApiApp(
   app.use(
     '/api/admin',
     authMiddleware.requireAdmin,
-    createAdminRouter(userRepo, repo, conversionService)
+    createAdminRouter(userRepo, repo, conversionService, storageService)
   );
 
   // Mount Book Router (Reading is 100% public, Mutations require auth)
