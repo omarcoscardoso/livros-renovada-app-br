@@ -152,6 +152,70 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(html).toContain('A Visão Celular Contemporânea');
   });
 
+  it('deve isolar o Sumário e identificar Dedicatória e Introdução antes dos capítulos', () => {
+    const extractor = new PdfExtractorService();
+    const pdfData = {
+      totalPages: 6,
+      pages: [
+        // Página 1: Folha de Rosto
+        'LIVRO DE EXEMPLO\nAutor Exemplo\nEditora Digital',
+        // Página 2: Dedicatória
+        'DEDICATÓRIA\n\nA todos os líderes e mentores que investem suas vidas na formação de discípulos.',
+        // Página 3: Sumário / Índice
+        'SUMÁRIO\n\nDedicatória ............ 2\nIntrodução ............ 4\nCapítulo 1: O Início .. 5\nCapítulo 2: O Avanço .. 6',
+        // Página 4: Introdução
+        'INTRODUÇÃO\n\nBem-vindo a esta jornada de aprendizado bíblico e liderança prática. Este texto serve como alicerce.',
+        // Página 5: Capítulo 1
+        'Capítulo 1: O Início\n\nNo princípio de cada grande obra existe uma convicção sólida e um propósito bem definido.\n\n"Tudo posso naquele que me fortalece" (Filipenses 4:13) resume nossa determinação.',
+        // Página 6: Capítulo 2
+        'Capítulo 2: O Avanço\n\nO avanço sustentável requer fidelidade nos pequenos começos e comunhão genuína.',
+      ],
+      fullText: 'Texto completo simulado',
+    };
+
+    const structured = extractor.buildStructuredBookFromPages(pdfData, 'livro_teste.pdf', {
+      titlePt: 'Livro de Exemplo',
+      author: 'Autor Exemplo',
+    });
+
+    // 1. Deve ter seções/capítulos estruturados
+    expect(structured.chapters.length).toBe(4);
+
+    // 2. Dedicatória deve ser o primeiro item preliminar (número 0, id: dedication)
+    expect(structured.chapters[0].id).toBe('dedication');
+    expect(structured.chapters[0].number).toBe(0);
+    expect(structured.chapters[0].titlePt).toContain('Dedicatória');
+    expect(structured.chapters[0].sections[0].paragraphsPt.join(' ')).toContain('A todos os líderes e mentores');
+
+    // 3. Introdução deve ser o segundo item preliminar (número 0, id: intro)
+    expect(structured.chapters[1].id).toBe('intro');
+    expect(structured.chapters[1].number).toBe(0);
+    expect(structured.chapters[1].titlePt).toContain('Introdução');
+    expect(structured.chapters[1].sections[0].paragraphsPt.join(' ')).toContain('Bem-vindo a esta jornada');
+
+    // 4. Capítulo 1 deve começar após o sumário e a introdução, com seu texto exato
+    expect(structured.chapters[2].id).toBe('chapter-1');
+    expect(structured.chapters[2].number).toBe(1);
+    expect(structured.chapters[2].titlePt).toContain('O Início');
+    const ch1Text = structured.chapters[2].sections[0].paragraphsPt.join(' ');
+    expect(ch1Text).toContain('No princípio de cada grande obra');
+    expect(ch1Text).toContain('"Tudo posso naquele que me fortalece" (Filipenses 4:13)');
+
+    // 5. O texto do Sumário (ex: "Dedicatória ............ 2") NUNCA deve estar dentro de nenhum capítulo
+    for (const ch of structured.chapters) {
+      for (const sec of ch.sections) {
+        const text = sec.paragraphsPt.join(' ');
+        expect(text).not.toContain('Dedicatória ............ 2');
+        expect(text).not.toContain('Capítulo 1: O Início .. 5');
+      }
+    }
+
+    // 6. Capítulo 2
+    expect(structured.chapters[3].id).toBe('chapter-2');
+    expect(structured.chapters[3].number).toBe(2);
+    expect(structured.chapters[3].titlePt).toContain('O Avanço');
+  });
+
   it('deve extrair texto real de um buffer PDF válido usando PdfExtractorService em memória', async () => {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();

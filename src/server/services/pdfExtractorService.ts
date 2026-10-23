@@ -546,6 +546,95 @@ export class PdfExtractorService {
   }
 
   /**
+   * Identifica se uma página pertence ao Sumário / Índice do livro
+   */
+  public isTableOfContentsPage(pageText: string): boolean {
+    if (!pageText) return false;
+    const lines = pageText.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return false;
+
+    const first5 = lines.slice(0, 5).join(' ').toLowerCase();
+    const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
+
+    // Linhas com estrutura típica de sumário: Título ...... Número de página
+    const tocLinePattern = /^(?:cap[íi]tulo|chapter|\d+|introdu[çc][ãa]o|pref[áa]cio|[a-zà-ú\s]{3,40})\b.*?(?:\.{2,}|\s{3,}|\t+)\s*\d+\s*$/i;
+    let tocLineCount = 0;
+    for (const line of lines) {
+      if (tocLinePattern.test(line)) {
+        tocLineCount++;
+      }
+    }
+
+    if (hasTocHeading && (tocLineCount >= 1 || lines.length <= 30)) {
+      return true;
+    }
+
+    return tocLineCount >= 3;
+  }
+
+  /**
+   * Identifica se uma página pertence a seções de Dedicatória / Agradecimentos
+   */
+  public isDedicationPage(pageText: string, pageNumber: number): boolean {
+    if (!pageText || pageNumber > 15) return false;
+    const firstLines = pageText.split('\n').slice(0, 4).join(' ').toLowerCase();
+    return /\b(dedicat[óo]ria|dedication|agradecimentos|acknowledgements|acknowledgments)\b/i.test(firstLines);
+  }
+
+  /**
+   * Identifica se uma página pertence a Prefácio ou Introdução
+   */
+  public isIntroOrPrefacePage(pageText: string, pageNumber: number): 'preface' | 'intro' | null {
+    if (!pageText || pageNumber > 25) return null;
+    const firstLines = pageText.split('\n').slice(0, 4).join(' ').toLowerCase();
+    if (/\b(pref[áa]cio|preface|foreword|pr[óo]logo|prologue)\b/i.test(firstLines)) {
+      return 'preface';
+    }
+    if (/\b(introdu[çc][ãa]o|introduction)\b/i.test(firstLines)) {
+      return 'intro';
+    }
+    return null;
+  }
+
+  /**
+   * Identifica se uma página inicia um novo capítulo com base em cabeçalhos explícitos
+   */
+  public isChapterHeading(text: string): boolean {
+    const firstLines = text.split('\n').slice(0, 4).join('\n');
+    return /^(?:cap[íi]tulo|chapter|li[çc][ãa]o|lesson|parte|part|ap[êe]ndice|appendix|conclus[ãa]o|conclusion|ep[íi]logo|epilogue)\b/im.test(firstLines);
+  }
+
+  /**
+   * Tenta extrair itens de Sumário com seus respectivos números de página de destino
+   */
+  public parseTableOfContentsEntries(
+    tocPages: Array<{ pageNumber: number; text: string }>
+  ): Array<{ title: string; pageNumber: number }> {
+    const entries: Array<{ title: string; pageNumber: number }> = [];
+    const entryRegex =
+      /^(?:cap[íi]tulo\s*\d*[:.—-]?|chapter\s*\d*[:.—-]?|\d+[:.—-]?)\s*(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)\s*$/i;
+
+    for (const page of tocPages) {
+      const lines = page.text.split('\n').map((l) => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(entryRegex);
+        if (match) {
+          const rawTitle = match[1]?.trim() || line;
+          const targetPage = parseInt(match[2], 10);
+          if (!isNaN(targetPage) && targetPage > 0) {
+            entries.push({
+              title: rawTitle.replace(/\.+$/, '').trim(),
+              pageNumber: targetPage,
+            });
+          }
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  /**
    * Builds a complete structured BookInfo + Chapter[] directly from extracted PDF pages.
    * Used both as a structural baseline and as a full local converter when Gemini API key is not configured.
    */
@@ -617,25 +706,137 @@ export class PdfExtractorService {
       };
     }
 
-    const rawChapters: {
+    // 1. Identificar páginas de Sumário / Índice
+    const tocPages: Array<{ pageNumber: number; text: string }> = [];
+    const tocPageNumbers = new Set<number>();
+
+    for (const page of nonEmptyPages.slice(0, 15)) {
+      if (this.isTableOfContentsPage(page.text)) {
+        tocPages.push(page);
+        tocPageNumbers.add(page.pageNumber);
+      }
+    }
+
+    const tocEntries = this.parseTableOfContentsEntries(tocPages);
+
+    // 2. Identificar seções de Front Matter (Dedicatória, Prefácio, Introdução)
+    const dedicationPages: Array<{ pageNumber: number; text: string }> = [];
+    const prefacePages: Array<{ pageNumber: number; text: string }> = [];
+    const introPages: Array<{ pageNumber: number; text: string }> = [];
+    const candidateBodyPages: Array<{ pageNumber: number; text: string }> = [];
+
+    for (const page of nonEmptyPages) {
+      // Se for página de Sumário / Índice, NUNCA incluir no texto de leitura dos capítulos!
+      if (tocPageNumbers.has(page.pageNumber)) {
+        continue;
+      }
+
+      // Dedicatória e Agradecimentos nas páginas preliminares
+      if (page.pageNumber <= 15 && this.isDedicationPage(page.text, page.pageNumber)) {
+        dedicationPages.push(page);
+        continue;
+      }
+
+      // Prefácio ou Introdução antes dos capítulos
+      if (page.pageNumber <= 25) {
+        const introType = this.isIntroOrPrefacePage(page.text, page.pageNumber);
+        if (introType === 'preface') {
+          prefacePages.push(page);
+          continue;
+        } else if (introType === 'intro') {
+          introPages.push(page);
+          continue;
+        }
+      }
+
+      candidateBodyPages.push(page);
+    }
+
+    // Identifica a primeira página onde realmente inicia o conteúdo de leitura
+    const firstContentPage = Math.min(
+      ...dedicationPages.map((p) => p.pageNumber),
+      ...prefacePages.map((p) => p.pageNumber),
+      ...introPages.map((p) => p.pageNumber),
+      ...tocPages.map((p) => p.pageNumber),
+      ...candidateBodyPages.filter((p) => this.isChapterHeading(p.text)).map((p) => p.pageNumber),
+      Infinity
+    );
+
+    // Páginas antes de firstContentPage são capa, folha de rosto e ficha catalográfica (não são capítulos)
+    const bodyPages = candidateBodyPages.filter((p) => {
+      if (isFinite(firstContentPage) && p.pageNumber < firstContentPage) {
+        return false;
+      }
+      return true;
+    });
+
+    const rawSections: Array<{
+      type: 'dedication' | 'preface' | 'intro' | 'chapter';
+      id: string;
+      number: number;
       title: string;
       startPage: number;
       endPage: number;
       pagesText: string[];
-    }[] = [];
+    }> = [];
 
+    // Adiciona Dedicatória se identificada
+    if (dedicationPages.length > 0) {
+      rawSections.push({
+        type: 'dedication',
+        id: 'dedication',
+        number: 0,
+        title: 'Dedicatória',
+        startPage: dedicationPages[0].pageNumber,
+        endPage: dedicationPages[dedicationPages.length - 1].pageNumber,
+        pagesText: dedicationPages.map((p) => p.text),
+      });
+    }
+
+    // Adiciona Prefácio se identificado
+    if (prefacePages.length > 0) {
+      rawSections.push({
+        type: 'preface',
+        id: 'preface',
+        number: 0,
+        title: 'Prefácio',
+        startPage: prefacePages[0].pageNumber,
+        endPage: prefacePages[prefacePages.length - 1].pageNumber,
+        pagesText: prefacePages.map((p) => p.text),
+      });
+    }
+
+    // Adiciona Introdução se identificada
+    if (introPages.length > 0) {
+      rawSections.push({
+        type: 'intro',
+        id: 'intro',
+        number: 0,
+        title: 'Introdução',
+        startPage: introPages[0].pageNumber,
+        endPage: introPages[introPages.length - 1].pageNumber,
+        pagesText: introPages.map((p) => p.text),
+      });
+    }
+
+    // Agrupa os capítulos do corpo do livro
     const chapterHeadingRegex =
-      /^(?:cap[íi]tulo|chapter|parte|part|li[çc][ãa]o|introdu[çc][ãa]o|introduction|pref[áa]cio|ap[êe]ndice|appendix)\b[^\n]{0,90}/im;
+      /^(?:cap[íi]tulo|chapter|parte|part|li[çc][ãa]o|lesson|ap[êe]ndice|appendix|conclus[ãa]o|conclusion)\b[^\n]{0,90}/im;
 
-    const pagesPerChunk = Math.max(3, Math.ceil(nonEmptyPages.length / 10));
-    let currentGroup: {
+    const pagesPerChunk = Math.max(3, Math.ceil(bodyPages.length / 10));
+    let currentChapterGroup: {
+      type: 'chapter';
+      id: string;
+      number: number;
       title: string;
       startPage: number;
       endPage: number;
       pagesText: string[];
     } | null = null;
 
-    for (const page of nonEmptyPages) {
+    let chapterCounter = 0;
+
+    for (const page of bodyPages) {
       const lines = page.text
         .split('\n')
         .map((l) => l.trim())
@@ -643,34 +844,55 @@ export class PdfExtractorService {
       const firstLines = lines.slice(0, 4).join('\n');
       const headingMatch = firstLines.match(chapterHeadingRegex);
 
+      // Verifica se a página corresponde a uma entrada mapeada no Sumário
+      const matchedToc = tocEntries.find((e) => e.pageNumber === page.pageNumber);
+
       const shouldStartNewChapter =
-        !currentGroup ||
-        (headingMatch && currentGroup.pagesText.length >= 1) ||
-        currentGroup.pagesText.length >= pagesPerChunk;
+        !currentChapterGroup ||
+        Boolean(matchedToc) ||
+        (headingMatch && currentChapterGroup.pagesText.length >= 1) ||
+        currentChapterGroup.pagesText.length >= pagesPerChunk;
 
       if (shouldStartNewChapter) {
-        const chapterIdx = rawChapters.length + 1;
-        const detectedTitle = headingMatch
+        chapterCounter++;
+        const detectedTitle = matchedToc
+          ? matchedToc.title
+          : headingMatch
           ? headingMatch[0].replace(/\s+/g, ' ').trim()
           : lines[0] && lines[0].length > 4 && lines[0].length < 85
           ? lines[0]
-          : `Capítulo ${chapterIdx}`;
+          : `Capítulo ${chapterCounter}`;
 
-        currentGroup = {
+        currentChapterGroup = {
+          type: 'chapter',
+          id: `chapter-${chapterCounter}`,
+          number: chapterCounter,
           title: detectedTitle,
           startPage: page.pageNumber,
           endPage: page.pageNumber,
           pagesText: [page.text],
         };
-        rawChapters.push(currentGroup);
-      } else if (currentGroup) {
-        currentGroup.endPage = page.pageNumber;
-        currentGroup.pagesText.push(page.text);
+        rawSections.push(currentChapterGroup);
+      } else if (currentChapterGroup) {
+        currentChapterGroup.endPage = page.pageNumber;
+        currentChapterGroup.pagesText.push(page.text);
       }
     }
 
-    const chapters: Chapter[] = rawChapters.map((group, idx) => {
-      const chNum = idx + 1;
+    // Se nenhum capítulo foi gerado a partir do corpo, adiciona o corpo todo em um capítulo 1
+    if (rawSections.length === 0 && bodyPages.length > 0) {
+      rawSections.push({
+        type: 'chapter',
+        id: 'chapter-1',
+        number: 1,
+        title: 'Capítulo 1 — Conteúdo Principal',
+        startPage: bodyPages[0].pageNumber,
+        endPage: bodyPages[bodyPages.length - 1].pageNumber,
+        pagesText: bodyPages.map((p) => p.text),
+      });
+    }
+
+    const chapters: Chapter[] = rawSections.map((group) => {
       const combinedText = group.pagesText.join('\n\n');
       const paragraphs = this.splitIntoReadableParagraphs(combinedText);
 
@@ -684,10 +906,10 @@ export class PdfExtractorService {
         const secTitle =
           firstSentence.length > 10 && firstSentence.length < 75
             ? firstSentence
-            : `Parte ${secNum} — Desenvolvimento`;
+            : `Seção ${secNum}`;
 
         sections.push({
-          id: `ch-${chNum}-sec-${secNum}`,
+          id: `${group.id}-sec-${secNum}`,
           titlePt: secTitle,
           titleEn: secTitle,
           paragraphsPt: secParas,
@@ -697,9 +919,9 @@ export class PdfExtractorService {
 
       if (sections.length === 0) {
         sections.push({
-          id: `ch-${chNum}-sec-1`,
-          titlePt: 'Conteúdo Principal',
-          titleEn: 'Main Content',
+          id: `${group.id}-sec-1`,
+          titlePt: 'Texto Integral',
+          titleEn: 'Full Text',
           paragraphsPt: [combinedText || 'Conteúdo extraído do PDF.'],
           paragraphsEn: [combinedText || 'Content extracted from PDF.'],
         });
@@ -710,7 +932,7 @@ export class PdfExtractorService {
 
       const summaryCandidate = paragraphs[0]
         ? paragraphs[0].slice(0, 260) + (paragraphs[0].length > 260 ? '...' : '')
-        : `Síntese do ${group.title} (páginas ${group.startPage} a ${group.endPage}).`;
+        : `Síntese de ${group.title} (páginas ${group.startPage} a ${group.endPage}).`;
 
       const keyPoints = paragraphs
         .slice(0, 4)
@@ -720,12 +942,17 @@ export class PdfExtractorService {
         })
         .filter((kp) => kp.length > 15);
 
-      return {
-        id: `cap-${chNum}`,
-        number: chNum,
-        titlePt: group.title.toLowerCase().startsWith('cap')
+      const titlePt =
+        group.number === 0
           ? group.title
-          : `Capítulo ${chNum}: ${group.title}`,
+          : group.title.toLowerCase().startsWith('cap')
+          ? group.title
+          : `Capítulo ${group.number}: ${group.title}`;
+
+      return {
+        id: group.id,
+        number: group.number,
+        titlePt,
         titleEn: group.title,
         subtitlePt: `Páginas ${group.startPage}–${group.endPage} do documento original`,
         subtitleEn: `Pages ${group.startPage}–${group.endPage}`,
@@ -738,11 +965,11 @@ export class PdfExtractorService {
         keyPointsPt:
           keyPoints.length > 0
             ? keyPoints
-            : ['Leitura estruturada a partir do documento PDF original.'],
+            : ['Texto integral preservado a partir do documento PDF original.'],
         studyQuestionsPt: [
-          `Qual é a ideia principal abordada em "${group.title}" e como ela se conecta com sua caminhada cristã ou liderança?`,
-          'Que passos práticos podem ser implementados nesta semana com base na leitura deste capítulo?',
-          'Destaque um trecho ou princípio deste capítulo para compartilhar em seu grupo ou célula.',
+          `Qual é o tema central abordado em "${group.title}" e quais são suas implicações práticas?`,
+          'Como este ensinamento pode ser aplicado em sua vida pessoal e comunidade?',
+          'Destaque um princípio fundamental deste capítulo para discussão em grupo.',
         ],
         sections,
       };
@@ -757,59 +984,34 @@ export class PdfExtractorService {
       originalYear: inferredYear,
       publisher: inferredPublisher,
       translatorNote:
-        'Texto extraído e estruturado automaticamente a partir do PDF enviado para a Biblioteca Digital.',
+        'Texto extraído e estruturado automaticamente a partir do PDF original, com preservação integral dos capítulos e isolamento do sumário.',
       chapters,
     };
   }
 
+  /**
+   * Divide o texto em parágrafos lógicos e limpos, respeitando a quebra original do texto do PDF.
+   */
   private splitIntoReadableParagraphs(text: string): string[] {
+    if (!text) return [];
+
     const rawBlocks = text
       .split(/\n\s*\n/)
-      .map((b) => b.replace(/\s+/g, ' ').trim())
+      .map((b) => b.trim())
       .filter((b) => b.length > 0);
 
     const result: string[] = [];
-    let buffer = '';
 
     for (const block of rawBlocks) {
-      if (/^\d{1,4}$/.test(block)) continue;
+      // Ignora números de páginas isolados residuais
+      if (/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(block)) continue;
 
-      if (buffer.length + block.length < 420) {
-        buffer = buffer ? `${buffer} ${block}` : block;
-      } else {
-        if (buffer) result.push(buffer);
-        buffer = block;
-      }
-
-      if (buffer.length >= 280) {
-        result.push(buffer);
-        buffer = '';
+      const cleanBlock = block.replace(/[ \t]+/g, ' ').trim();
+      if (cleanBlock.length > 0) {
+        result.push(cleanBlock);
       }
     }
 
-    if (buffer) {
-      result.push(buffer);
-    }
-
-    const finalParagraphs: string[] = [];
-    for (const para of result) {
-      if (para.length <= 750) {
-        finalParagraphs.push(para);
-      } else {
-        const sentences = para.match(/[^.!?]+[.!?]+|\S+/g) || [para];
-        let chunk = '';
-        for (const s of sentences) {
-          if ((chunk + ' ' + s).trim().length > 600 && chunk.length > 150) {
-            finalParagraphs.push(chunk.trim());
-            chunk = s.trim();
-          } else {
-            chunk = chunk ? `${chunk} ${s.trim()}` : s.trim();
-          }
-        }
-        if (chunk.trim()) finalParagraphs.push(chunk.trim());
-      }
-    }
-
-    return finalParagraphs.length > 0 ? finalParagraphs : [text.trim()];
+    return result.length > 0 ? result : [text.trim()];
   }
 }

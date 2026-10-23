@@ -456,8 +456,12 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className={`uppercase tracking-widest font-mono text-[11px] ${subtleTextClass}`}>
               {chapter.number === 0
-                ? 'Apresentação'
-                : chapter.number === 12 && totalChapters === 13
+                ? chapter.titlePt.toLowerCase().includes('dedicat')
+                  ? 'Dedicatória'
+                  : chapter.titlePt.toLowerCase().includes('pref')
+                  ? 'Prefácio'
+                  : 'Introdução'
+                : chapter.id?.startsWith('appendix') || chapter.titlePt.toLowerCase().startsWith('apêndice')
                 ? 'Apêndice'
                 : `Capítulo ${chapter.number}`}{' '}
               • Pág. {chapter.pages}

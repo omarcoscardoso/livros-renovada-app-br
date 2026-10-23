@@ -48,20 +48,38 @@ const BOOK_OUTLINE_JSON_SCHEMA = {
       description:
         'Número da página do PDF (1-indexada) onde está a capa principal ou folha de rosto do livro (normalmente 1).',
     },
+    tableOfContentsPages: {
+      type: 'array',
+      description:
+        'Lista com os números exatos de todas as páginas onde está localizado o Sumário ou Índice no PDF (ex: [3, 4]). Estas páginas NUNCA devem ser atribuídas como texto de leitura a nenhum capítulo.',
+      items: { type: 'integer' },
+    },
     chapterPlan: {
       type: 'array',
-      description: 'Lista estruturada dos capítulos identificados no livro.',
+      description: 'Lista estruturada das seções preliminares e capítulos identificados no livro.',
       items: {
         type: 'object',
         properties: {
-          number: { type: 'integer', description: 'Número sequencial do capítulo (0 para introdução, 1..N).' },
-          titlePt: { type: 'string', description: 'Título do capítulo em Português do Brasil.' },
-          titleEn: { type: 'string', description: 'Título original do capítulo.' },
-          subtitlePt: { type: 'string', description: 'Subtítulo do capítulo em Português.' },
-          startPage: { type: 'integer', description: 'Página inicial no PDF (1-indexada).' },
-          endPage: { type: 'integer', description: 'Página final no PDF (1-indexada).' },
+          number: {
+            type: 'integer',
+            description: 'Número sequencial: 0 para Dedicatória, Prefácio ou Introdução; 1..N para capítulos.',
+          },
+          type: {
+            type: 'string',
+            enum: ['dedication', 'preface', 'intro', 'chapter', 'appendix', 'conclusion'],
+            description: 'Tipo da seção: dedication, preface, intro, chapter, appendix ou conclusion.',
+          },
+          titlePt: { type: 'string', description: 'Título da seção ou capítulo em Português do Brasil.' },
+          titleEn: { type: 'string', description: 'Título original no PDF.' },
+          subtitlePt: { type: 'string', description: 'Subtítulo da seção/capítulo em Português (se houver).' },
+          startPage: {
+            type: 'integer',
+            description:
+              'Página inicial exata no PDF onde este capítulo/seção realmente começa (NUNCA incluir páginas de Sumário ou Capa).',
+          },
+          endPage: { type: 'integer', description: 'Página final exata no PDF (1-indexada).' },
         },
-        required: ['number', 'titlePt', 'titleEn', 'startPage', 'endPage'],
+        required: ['number', 'type', 'titlePt', 'startPage', 'endPage'],
       },
     },
   },
@@ -327,17 +345,27 @@ export class GeminiConversionService {
       .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1500)}`)
       .join('\n\n');
 
-    const outlinePrompt = `Você é um editor literário sênior, teólogo e arquiteto de conversão de livros digitais (conforme o Guia Técnico de Engenharia de E-Books).
-Analise as páginas extraídas deste livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor:
-1. Mapeamento de Front Matter: Capa (normalmente página 1), Folha de Rosto, Créditos Legais (Ano, Editora), Sumário / Índice.
-2. Identificação do Corpo Principal: Introdução/Prefácio (se houver, com número 0), Capítulos numerados sequencialmente (1 a N), e Apêndices práticos de encerramento (se houver).
-3. Preservação fiel dos limites de páginas originais (startPage a endPage) para cada capítulo.
-4. Título e subtítulo elegantes em Português do Brasil.
+    const outlinePrompt = `Você é um arquiteto especialista em conservação e estruturação editorial de livros em PDF.
+Analise as páginas extraídas deste livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor absoluto, reproduzindo com fidelidade a ordem e a organização do livro físico original:
+
+1. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
+   - Localize exatamente em quais páginas está o Sumário ou Índice do livro (geralmente entre as páginas 3 e 12).
+   - Preencha "tableOfContentsPages" com a lista de páginas do Sumário (ex.: [3, 4]).
+   - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como índice de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar APÓS o Sumário (ou após a introdução).
+
+2. SEÇÕES PRELIMINARES (FRONT MATTER):
+   - Dedicatória / Agradecimentos: Se o livro contiver Dedicatória (Dedication) ou Agradecimentos (Acknowledgments), crie uma seção separada com type: "dedication" e number: 0, antes de qualquer capítulo.
+   - Prefácio / Prólogo / Introdução: Se o livro contiver Prefácio (Preface/Foreword), Prólogo (Prologue) ou Introdução (Introduction), crie uma seção separada com type: "preface" ou type: "intro" e number: 0, antes de iniciar o Capítulo 1.
+
+3. CAPÍTULOS PRINCIPAIS DO LIVRO (EXATIDÃO DA ESTRUTURA):
+   - Mapeie cada capítulo (Capítulo 1, 2, ... N) respeitando rigorosamente a divisão e os títulos originais do livro.
+   - Para cada capítulo, determine com precisão a página onde ele realmente começa (startPage) e onde termina (endPage).
+   - Se houver Apêndices ou Conclusão ao final, adicione-os com type: "appendix" ou type: "conclusion".
+   - Assegure que nenhum capítulo comece antes do término do Sumário.
+
 ${hints.titlePt ? `Título sugerido pelo usuário: "${hints.titlePt}"` : ''}
 ${hints.author ? `Autor sugerido pelo usuário: "${hints.author}"` : ''}
-${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}
-
-Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Math.max(1, extracted.totalPages)} (entre 1 e 15 capítulos, conforme a estrutura real da obra).`;
+${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`;
 
     const outlineInputs: any[] = [];
     if (pdfBase64) {
@@ -362,10 +390,15 @@ Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Mat
     });
 
     const outlineJson = JSON.parse(outlineResponse.text || '{}');
+    const tocPagesSet = new Set<number>(
+      Array.isArray(outlineJson.tableOfContentsPages) ? outlineJson.tableOfContentsPages : []
+    );
+
     const chapterPlan: Array<{
       number: number;
+      type?: 'dedication' | 'preface' | 'intro' | 'chapter' | 'appendix' | 'conclusion';
       titlePt: string;
-      titleEn: string;
+      titleEn?: string;
       subtitlePt?: string;
       startPage: number;
       endPage: number;
@@ -373,7 +406,15 @@ Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Mat
       Array.isArray(outlineJson.chapterPlan) && outlineJson.chapterPlan.length > 0
         ? outlineJson.chapterPlan
         : localBaseline.chapters.map((c, idx) => ({
-            number: idx + 1,
+            number: c.number || idx + 1,
+            type:
+              c.id === 'dedication'
+                ? 'dedication'
+                : c.id === 'preface'
+                ? 'preface'
+                : c.id === 'intro' || c.number === 0
+                ? 'intro'
+                : 'chapter',
             titlePt: c.titlePt,
             titleEn: c.titleEn,
             subtitlePt: c.subtitlePt,
@@ -400,38 +441,43 @@ Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Mat
         extracted.pages.length,
         Math.max(startIdx + 1, plan.endPage || extracted.pages.length)
       );
-      const chapterPagesText = extracted.pages
+
+      // Filtra páginas para garantir que páginas de Sumário NUNCA entrem no texto de leitura
+      const chapterPagesFiltered = extracted.pages
         .slice(startIdx, endIdx)
-        .map((p, i) => `[Página ${startIdx + i + 1}]\n${p}`)
-        .join('\n\n');
+        .map((p, i) => {
+          const pageNum = startIdx + i + 1;
+          if (tocPagesSet.has(pageNum)) {
+            return null; // Exclui página do Sumário
+          }
+          return `[Página ${pageNum}]\n${p}`;
+        })
+        .filter(Boolean);
 
-      const chapterPrompt = `Você é um tradutor literário sênior e mentor pastoral especializado na conversão de livros digitais para o Português do Brasil.
-Estruture integralmente o Capítulo "${plan.titlePt}" (Páginas ${plan.startPage} a ${plan.endPage}) do livro "${outlineJson.titlePt || hints.titlePt || localBaseline.titlePt}" de ${outlineJson.author || hints.author || localBaseline.author}.
+      const chapterPagesText = chapterPagesFiltered.join('\n\n');
 
-DIRETRIZES TÉCNICAS E EDITORIAIS OBRIGATÓRIAS (SOP DE PIPELINE DE CONVERSÃO):
+      const chapterPrompt = `Você é um especialista em transcrição e preservação editorial fiel de livros em PDF.
+Converta com rigor e fidelidade absoluta o conteúdo de "${plan.titlePt}" (Páginas ${plan.startPage} a ${plan.endPage}) do livro "${outlineJson.titlePt || hints.titlePt || localBaseline.titlePt}" de ${outlineJson.author || hints.author || localBaseline.author}.
 
-1. GLOSSÁRIO DE DOMÍNIO E EQUIVALÊNCIAS OBRIGATÓRIAS (PT-BR):
-   - "Cell Church" -> "Igreja em Células"
-   - "Church with cells" -> "Igreja com células"
-   - "District / Zone" -> "Distrito / Zona"
-   - "Home groups / Life groups" -> "Grupos caseiros / Grupos de vida"
-   - "Icebreaker" -> "Quebra-gelo"
-   - "Soul therapy" -> "Terapia da alma"
-   - "Principle of Twelve" -> "Princípio dos Doze (G12)"
-   - "First Step Encounter" -> "Encontro de Primeiro Passo"
-   - "Koinonitis" -> "Koinonite"
+DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
 
-2. PRESERVAÇÃO DO TOM DE VOZ E DA NARRATIVA DO AUTOR:
-   - Narrativa em 1ª Pessoa: mantenha a autenticidade, o calor, a vulnerabilidade e o humor das anedotas pessoais relatadas pelo autor.
-   - Terminologia Bíblica: utilize as versões bíblicas consagradas no Brasil (ARA / NVI), adaptando nomes de livros bíblicos e referências para a grafia em Português do Brasil (ex.: Exodus -> Êxodo, James -> Tiago, Matthew -> Mateus).
-   - Paragrafação Espelhada: os parágrafos em paragraphsPt devem manter correspondência com paragraphsEn para conferência cruzada.
+1. FIDELIDADE TEXTUAL ABSOLUTA AO PDF:
+   - Transcreva e preserve rigorosamente o texto exato do autor presente nestas páginas do PDF.
+   - NÃO sintetize, NÃO resuma e NÃO omita parágrafos. Todos os argumentos, anedotas, citações, versículos bíblicos e exemplos do autor devem ser mantidos com total exatidão, exatamente como escritos no original.
+   - NÃO faça adaptações ou conversões de textos bíblicos: mantenha as citações, versículos e referências bíblicas EXATAMENTE como constam no PDF original.
+   - Se o livro estiver em outro idioma e precisar de tradução para o Português, traduza mantendo fidelidade estrita ao sentido original, sem alterar o estilo ou encurtar o texto.
 
-3. CONTEÚDO INTEGRAL E METADADOS DIDÁTICOS:
-   - Jamais faça resumos curtos no lugar do texto: traduza e transcreva os parágrafos densos e completos de cada seção daquele intervalo de páginas.
-   - summaryPt: Resumo executivo de 2 a 3 frases capturando a tese central do capítulo.
-   - keyPointsPt: 4 a 8 pilares fundamentais do capítulo.
-   - studyQuestionsPt: 3 a 5 perguntas de reflexão profunda para aplicação prática em grupos celulares e formação de liderança.
-   - estimatedReadTimeMinutes: calculado na taxa de ~180 a 200 palavras por minuto.`;
+2. ESTRUTURAÇÃO EM SEÇÕES E PARÁGRAFOS LÓGICOS:
+   - Divida o texto em seções lógicas baseadas nos subtítulos e tópicos do próprio capítulo do livro.
+   - Cada seção deve conter os parágrafos completos e densos extraídos das páginas (paragraphsPt).
+   - Remova ruídos residuais de cabeçalhos de corrida repetitivos ou números de página soltos que possam ter ficado no texto.
+   - NUNCA inclua partes de sumário, índices de outros capítulos ou notas de rodapé perdidas.
+
+3. METADADOS DIDÁTICOS DO CAPÍTULO:
+   - summaryPt: Síntese concisa da mensagem central deste capítulo (2 a 3 frases).
+   - keyPointsPt: 3 a 5 pontos centrais discutidos pelo autor.
+   - studyQuestionsPt: 3 a 4 perguntas reflexivas baseadas exclusivamente no conteúdo deste capítulo.
+   - estimatedReadTimeMinutes: Tempo estimado de leitura baseado no volume real de palavras (~180 a 200 palavras por minuto).`;
 
       const chapterInputs: any[] = [];
       if (!hasSelectableText && pdfBase64) {
@@ -458,7 +504,17 @@ DIRETRIZES TÉCNICAS E EDITORIAIS OBRIGATÓRIAS (SOP DE PIPELINE DE CONVERSÃO):
 
         const chData = JSON.parse(chResponse.text || '{}');
         const chNumber = typeof plan.number === 'number' ? plan.number : idx + 1;
-        const chId = chNumber === 0 ? 'intro' : `chapter-${chNumber}-${idx}`;
+
+        let chId = `chapter-${chNumber}`;
+        if (plan.type === 'dedication' || plan.titlePt.toLowerCase().includes('dedicat')) {
+          chId = 'dedication';
+        } else if (plan.type === 'preface' || plan.titlePt.toLowerCase().includes('pref')) {
+          chId = 'preface';
+        } else if (plan.type === 'intro' || plan.titlePt.toLowerCase().includes('introdu') || chNumber === 0) {
+          chId = 'intro';
+        } else if (plan.type === 'appendix' || plan.titlePt.toLowerCase().startsWith('apêndice')) {
+          chId = `appendix-${chNumber}`;
+        }
 
         const sections = (Array.isArray(chData.sections) ? chData.sections : []).map(
           (sec: any, sIdx: number) => ({
@@ -487,11 +543,11 @@ DIRETRIZES TÉCNICAS E EDITORIAIS OBRIGATÓRIAS (SOP DE PIPELINE DE CONVERSÃO):
               : `${plan.startPage}-${plan.endPage}`,
           estimatedReadTimeMinutes: Number(chData.estimatedReadTimeMinutes) || 6,
           summaryPt: String(
-            chData.summaryPt || `Síntese do capítulo ${plan.titlePt}.`
+            chData.summaryPt || `Síntese de ${plan.titlePt}.`
           ),
           keyPointsPt: Array.isArray(chData.keyPointsPt)
             ? chData.keyPointsPt.map(String)
-            : ['Leitura estruturada e traduzida para o Português.'],
+            : ['Texto integral preservado a partir do documento original.'],
           studyQuestionsPt: Array.isArray(chData.studyQuestionsPt)
             ? chData.studyQuestionsPt.map(String)
             : ['Como podemos aplicar os princípios deste capítulo na prática?'],

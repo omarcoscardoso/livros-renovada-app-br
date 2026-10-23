@@ -249,7 +249,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   ) : (
                     <span className="text-[10px] text-slate-500 w-3.5 inline-block text-center font-mono">
-                      {ch.number === 0 ? 'I' : ch.number === 12 && chapters.length === 13 ? 'A' : ch.number || idx + 1}
+                      {ch.number === 0
+                        ? ch.id === 'dedication'
+                          ? 'D'
+                          : ch.id === 'preface'
+                          ? 'P'
+                          : 'I'
+                        : ch.id?.startsWith('appendix')
+                        ? 'A'
+                        : ch.number || idx + 1}
                     </span>
                   )}
                 </div>
