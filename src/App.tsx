@@ -133,6 +133,7 @@ function LibraryApp({
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [editingBook, setEditingBook] = useState<StoredBook | null>(null);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
 
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
 
@@ -424,49 +425,65 @@ function LibraryApp({
         />
       ) : (
         <>
-          {/* Table of Contents & Library Drawer */}
-          <Sidebar
-            book={activeBook}
-            chapters={activeChapters}
-            currentChapterId={isCoverPage ? '__cover__' : currentChapter.id}
-            onSelectChapter={handleSelectChapter}
-            onToggleChapterRead={handleToggleReadChapter}
-            onOpenSearch={() => setIsSearchOpen(true)}
-            onOpenPdf={() => {
-              setPdfTargetBook(activeBook);
-              setIsPdfOpen(true);
-            }}
-            onOpenLibrary={() => setCurrentView('bookshelf')}
-            onOpenUpload={handleOpenUpload}
-            onOpenEditor={() => setEditingBook(activeBook)}
-            readChapters={readChaptersForActiveBook}
-            isOpen={isSidebarOpen}
-            onClose={() => setIsSidebarOpen(false)}
-            totalBooksCount={Math.max(1, booksList.length)}
-          />
-
-          {/* Main E-Book Reader Area */}
-          <div className="flex-1 lg:pl-72 flex flex-col min-h-screen">
-            <Navbar
-              onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+          {/* Table of Contents & Library Drawer (hidden in Focus Mode) */}
+          {!isFocusMode && (
+            <Sidebar
+              book={activeBook}
+              chapters={activeChapters}
+              currentChapterId={isCoverPage ? '__cover__' : currentChapter.id}
+              onSelectChapter={handleSelectChapter}
+              onToggleChapterRead={handleToggleReadChapter}
               onOpenSearch={() => setIsSearchOpen(true)}
               onOpenPdf={() => {
                 setPdfTargetBook(activeBook);
                 setIsPdfOpen(true);
               }}
-              onPrintPdf={handleDownloadPdf}
-              onOpenLibrary={() => setCurrentView('bookshelf')}
+              onOpenLibrary={() => {
+                setIsFocusMode(false);
+                setCurrentView('bookshelf');
+              }}
               onOpenUpload={handleOpenUpload}
-              onOpenAdmin={() => setIsAdminModalOpen(true)}
-              theme={theme}
-              onChangeTheme={handleChangeTheme}
-              fontSize={fontSize}
-              onChangeFontSize={handleChangeFontSize}
-              bookTitle={activeBook.titlePt}
-              chapterTitle={isCoverPage ? 'Capa & Folha de Rosto' : currentChapter.titlePt}
+              onOpenEditor={() => setEditingBook(activeBook)}
+              readChapters={readChaptersForActiveBook}
+              isOpen={isSidebarOpen}
+              onClose={() => setIsSidebarOpen(false)}
               totalBooksCount={Math.max(1, booksList.length)}
-              hasOriginalPdf={activeBook.hasOriginalPdf}
             />
+          )}
+
+          {/* Main E-Book Reader Area */}
+          <div
+            className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
+              isFocusMode ? 'lg:pl-0' : 'lg:pl-72'
+            }`}
+          >
+            {!isFocusMode && (
+              <Navbar
+                onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+                onOpenSearch={() => setIsSearchOpen(true)}
+                onOpenPdf={() => {
+                  setPdfTargetBook(activeBook);
+                  setIsPdfOpen(true);
+                }}
+                onPrintPdf={handleDownloadPdf}
+                onOpenLibrary={() => {
+                  setIsFocusMode(false);
+                  setCurrentView('bookshelf');
+                }}
+                onOpenUpload={handleOpenUpload}
+                onOpenAdmin={() => setIsAdminModalOpen(true)}
+                theme={theme}
+                onChangeTheme={handleChangeTheme}
+                fontSize={fontSize}
+                onChangeFontSize={handleChangeFontSize}
+                bookTitle={activeBook.titlePt}
+                chapterTitle={isCoverPage ? 'Capa & Folha de Rosto' : currentChapter.titlePt}
+                totalBooksCount={Math.max(1, booksList.length)}
+                hasOriginalPdf={activeBook.hasOriginalPdf}
+                isFocusMode={isFocusMode}
+                onToggleFocusMode={() => setIsFocusMode((prev) => !prev)}
+              />
+            )}
 
             <main className="flex-1">
               <ChapterReader
@@ -486,6 +503,8 @@ function LibraryApp({
                 onSelectChapter={handleSelectChapter}
                 hasPrev={!isCoverPage}
                 hasNext={isCoverPage || currentChapterIndex < activeChapters.length - 1}
+                isFocusMode={isFocusMode}
+                onToggleFocusMode={() => setIsFocusMode((prev) => !prev)}
               />
             </main>
           </div>

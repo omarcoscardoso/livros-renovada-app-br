@@ -24,6 +24,7 @@ import {
   LogOut,
   User,
   Filter,
+  ChevronRight,
 } from 'lucide-react';
 import { BookSummary } from '../data/bookTypes';
 import { ReaderTheme } from './Navbar';
@@ -184,6 +185,14 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
     return sum + readForBook;
   }, 0);
 
+  // Active reading book for the Antigravity Hero Banner
+  const activeReadingBook =
+    books.find((b) => {
+      const read = readChaptersMap[b.id] || [];
+      return read.length > 0 && read.length < Math.max(1, b.chapterCount);
+    }) ||
+    (books.length > 0 && (readChaptersMap[books[0].id]?.length || 0) > 0 ? books[0] : null);
+
   // Protected actions (Requirement 3a, 3b)
   const handleUploadClick = () => {
     if (!user) {
@@ -202,7 +211,26 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
   };
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${pageBg}`}>
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 relative ${pageBg}`}>
+      {/* Antigravity Ambient Background Glow Orbs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden -z-10">
+        <div
+          className={`absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full blur-[140px] opacity-25 ${
+            isDark ? 'bg-amber-600/30' : isSepia ? 'bg-[#d8c7a7]/50' : 'bg-amber-300/40'
+          }`}
+        />
+        <div
+          className={`absolute top-1/3 -right-40 w-[450px] h-[450px] rounded-full blur-[140px] opacity-20 ${
+            isDark ? 'bg-indigo-600/20' : isSepia ? 'bg-amber-800/20' : 'bg-amber-400/20'
+          }`}
+        />
+        <div
+          className={`absolute -bottom-40 left-1/3 w-[500px] h-[500px] rounded-full blur-[140px] opacity-15 ${
+            isDark ? 'bg-emerald-600/20' : isSepia ? 'bg-emerald-800/15' : 'bg-emerald-300/30'
+          }`}
+        />
+      </div>
+
       {/* Top Header Bar */}
       <header className={`sticky top-0 z-30 border-b backdrop-blur-md px-4 sm:px-8 py-3.5 ${headerBg}`}>
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
@@ -318,7 +346,111 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 sm:py-10 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 sm:py-10 space-y-8">
+        {/* Antigravity Hero Banner: Continuar Leitura */}
+        {activeReadingBook && !searchQuery.trim() && statusFilter === 'all' && (
+          <div
+            className={`relative rounded-3xl border p-6 sm:p-8 backdrop-blur-xl overflow-hidden shadow-2xl transition-all duration-300 ${
+              isDark
+                ? 'bg-slate-900/60 border-slate-800 shadow-black/50'
+                : isSepia
+                ? 'bg-[#ece4d0]/70 border-[#ded3be] shadow-amber-950/10'
+                : 'bg-white/80 border-slate-200 shadow-slate-900/5'
+            }`}
+          >
+            {/* Subtle background glow inside the hero card */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            {(() => {
+              const read = readChaptersMap[activeReadingBook.id] || [];
+              const readCount = read.length;
+              const totalCh = Math.max(1, activeReadingBook.chapterCount);
+              const percent = Math.min(100, Math.round((readCount / totalCh) * 100));
+              const coverGradient = COVER_STYLES[activeReadingBook.coverColor] || COVER_STYLES.amber;
+
+              return (
+                <div className="relative flex flex-col md:flex-row items-center gap-6 sm:gap-8 justify-between">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left min-w-0 flex-1">
+                    {/* Floating Book Cover Thumbnail */}
+                    <div
+                      onClick={() => onSelectBook(activeReadingBook.id)}
+                      className="relative group cursor-pointer shrink-0"
+                    >
+                      <div className="absolute -inset-2 bg-amber-500/30 rounded-2xl blur-lg opacity-70 group-hover:opacity-100 transition-opacity" />
+                      <div
+                        className={`relative w-24 h-36 sm:w-28 sm:h-40 rounded-xl overflow-hidden border shadow-xl transition-transform group-hover:scale-105 ${coverGradient}`}
+                      >
+                        {activeReadingBook.coverImageUrl ? (
+                          <>
+                            <img
+                              src={activeReadingBook.coverImageUrl}
+                              alt={activeReadingBook.titlePt}
+                              className="w-full h-full object-cover bg-white"
+                            />
+                            <div className="pointer-events-none absolute inset-y-0 left-0 w-3 bg-gradient-to-r from-black/40 via-white/15 to-transparent" />
+                          </>
+                        ) : (
+                          <div className="p-3 flex flex-col justify-between h-full text-left">
+                            <BookOpen className="w-5 h-5 text-amber-400" />
+                            <p className="text-xs font-bold leading-tight">{activeReadingBook.titlePt}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Book Info & Reading Stats */}
+                    <div className="space-y-2 min-w-0 flex-1">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Continuar de onde você parou</span>
+                      </div>
+
+                      <h3
+                        onClick={() => onSelectBook(activeReadingBook.id)}
+                        className="text-xl sm:text-2xl font-bold font-editorial cursor-pointer hover:text-amber-500 transition-colors line-clamp-1"
+                      >
+                        {activeReadingBook.titlePt}
+                      </h3>
+
+                      <p className={`text-xs sm:text-sm font-medium ${mutedText}`}>
+                        {activeReadingBook.author} • {activeReadingBook.originalYear}
+                      </p>
+
+                      {/* Progress Bar & Chapter Counts */}
+                      <div className="max-w-md pt-2 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={mutedText}>
+                            {readCount} de {totalCh} capítulos lidos
+                          </span>
+                          <span className="font-mono font-bold text-amber-500">{percent}%</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-500 shadow-sm"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Primary CTA Button */}
+                  <div className="shrink-0 self-center">
+                    <button
+                      onClick={() => onSelectBook(activeReadingBook.id)}
+                      className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm sm:text-base shadow-xl shadow-amber-500/25 transition-all transform hover:scale-105 cursor-pointer"
+                    >
+                      <BookOpen className="w-5 h-5" />
+                      <span>Continuar Lendo</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Calibre Search Toolbar & View Switcher (Requirement 1, 2) */}
         <div className="space-y-4 pb-4 border-b border-black/10 dark:border-white/10">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -460,7 +592,7 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
               return (
                 <div
                   key={book.id}
-                  className={`rounded-2xl border p-6 flex flex-col justify-between transition-all duration-200 ${cardBg}`}
+                  className={`group rounded-3xl border p-6 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-amber-500/10 ${cardBg}`}
                 >
                   <div>
                     <div className="flex items-start gap-4">
@@ -468,7 +600,7 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
                       <button
                         onClick={() => !isProcessing && onSelectBook(book.id)}
                         disabled={isProcessing}
-                        className={`relative w-24 h-36 rounded-xl bg-gradient-to-br border overflow-hidden flex flex-col justify-between text-left shrink-0 shadow-xl transition-transform hover:scale-[1.03] cursor-pointer group ${coverGradient}`}
+                        className={`relative w-24 h-36 rounded-xl bg-gradient-to-br border overflow-hidden flex flex-col justify-between text-left shrink-0 shadow-lg group-hover:shadow-2xl group-hover:scale-105 transition-all duration-300 cursor-pointer ${coverGradient}`}
                         title={`Abrir "${book.titlePt}"`}
                       >
                         {book.coverImageUrl ? (
@@ -632,7 +764,7 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
             {/* Upload Card */}
             <button
               onClick={handleUploadClick}
-              className={`rounded-2xl border-2 border-dashed p-6 flex flex-col items-center justify-center text-center gap-3 min-h-[260px] transition-all cursor-pointer ${
+              className={`rounded-3xl border-2 border-dashed p-6 flex flex-col items-center justify-center text-center gap-3 min-h-[260px] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl cursor-pointer ${
                 isDark
                   ? 'border-slate-800 hover:border-amber-500/50 bg-slate-900/30 hover:bg-slate-900/60'
                   : isSepia
@@ -672,7 +804,7 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
               return (
                 <div
                   key={book.id}
-                  className={`group rounded-xl border p-3 sm:p-3.5 flex items-center justify-between gap-3 sm:gap-4 transition-all duration-150 ${cardBg}`}
+                  className={`group rounded-2xl border p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-500/5 ${cardBg}`}
                 >
                   {/* Left: Cover + Title & Author (Clickable) */}
                   <div

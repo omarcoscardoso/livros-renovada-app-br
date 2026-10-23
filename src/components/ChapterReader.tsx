@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookInfo, Chapter } from '../data/bookTypes';
 import { ReaderTheme, FontSize } from './Navbar';
 import {
@@ -12,6 +12,8 @@ import {
   Loader2,
   BookOpenCheck,
   BookOpen,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface ChapterReaderProps {
@@ -31,6 +33,8 @@ interface ChapterReaderProps {
   onSelectChapter?: (chapterId: string) => void;
   hasPrev: boolean;
   hasNext: boolean;
+  isFocusMode?: boolean;
+  onToggleFocusMode?: () => void;
 }
 
 export const ChapterReader: React.FC<ChapterReaderProps> = ({
@@ -50,9 +54,48 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   onSelectChapter,
   hasPrev,
   hasNext,
+  isFocusMode = false,
+  onToggleFocusMode,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showBilingual, setShowBilingual] = useState(false);
+
+  // Scroll tracking for ambient progress bar and HUD
+  const [scrollPercent, setScrollPercent] = useState<number>(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (totalHeight > 0) {
+        const current = Math.min(100, Math.max(0, (window.scrollY / totalHeight) * 100));
+        setScrollPercent(current);
+      } else {
+        setScrollPercent(0);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [chapter.id]);
+
+  // Keyboard shortcut listener: F or Esc for Zen Focus Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if ((e.key === 'f' || e.key === 'F') && onToggleFocusMode) {
+        e.preventDefault();
+        onToggleFocusMode();
+      } else if (e.key === 'Escape' && isFocusMode && onToggleFocusMode) {
+        e.preventDefault();
+        onToggleFocusMode();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFocusMode, onToggleFocusMode]);
 
   // AI Assistant & Cell Lesson Generator state
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -187,17 +230,21 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               Capa Original & Folha de Rosto • Edição Digital
             </span>
 
-            {/* High-Res Extracted Book Cover Frame */}
+            {/* High-Res Extracted Book Cover Frame with 3D Spatial Aura */}
             {book.coverImageUrl ? (
-              <div className="relative group">
-                <div className="relative w-64 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-white transition-transform duration-300 hover:scale-[1.01]">
+              <div className="relative group py-2">
+                {/* Antigravity Ambient Glow Halo */}
+                <div className="absolute -inset-4 bg-gradient-to-tr from-amber-500/25 via-amber-600/20 to-orange-500/25 rounded-3xl blur-2xl opacity-70 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+                <div className="relative w-64 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/40 bg-white transition-all duration-300 transform group-hover:scale-[1.02] group-hover:-translate-y-1">
                   <img
                     src={book.coverImageUrl}
                     alt={`Capa do livro ${book.titlePt}`}
                     className="w-full h-auto object-contain block"
                   />
-                  {/* Subtle 3D Book Spine Shadow */}
-                  <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-black/30 via-white/15 to-transparent" />
+                  {/* Realistic 3D Book Spine Shadow & Specular Gloss */}
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-black/40 via-white/20 to-transparent" />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-white/10" />
                 </div>
               </div>
             ) : (
@@ -274,8 +321,37 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
   return (
     <article
-      className={`min-h-screen py-10 sm:py-16 px-4 sm:px-8 lg:px-16 transition-colors duration-200 ${themeClasses}`}
+      className={`min-h-screen py-10 sm:py-16 px-4 sm:px-8 lg:px-16 transition-colors duration-200 relative ${themeClasses}`}
     >
+      {/* Ambient Scroll-Linked Reading Progress Bar (Antigravity HUD) */}
+      <div className="fixed top-0 left-0 right-0 z-50 h-[3px] bg-black/10 dark:bg-white/5 pointer-events-none">
+        <div
+          className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 transition-all duration-150 ease-out shadow-[0_0_10px_rgba(245,158,11,0.8)]"
+          style={{ width: `${scrollPercent}%` }}
+        />
+      </div>
+
+      {/* Floating Zen Focus Mode Exit Pill */}
+      {isFocusMode && onToggleFocusMode && (
+        <div className="fixed top-4 right-4 z-40 no-print animate-fade-in">
+          <button
+            onClick={onToggleFocusMode}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-xl border shadow-xl cursor-pointer transition-transform hover:scale-105 ${
+              theme === 'dark'
+                ? 'bg-slate-900/80 border-slate-700 text-slate-200 shadow-black/50'
+                : theme === 'sepia'
+                ? 'bg-[#ece4d0]/90 border-[#d8c7a7] text-[#2c2217] shadow-amber-950/10'
+                : 'bg-white/90 border-slate-200 text-slate-800 shadow-slate-900/10'
+            }`}
+            title="Sair do Modo Foco (Esc ou F)"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
+            <span className="hidden sm:inline">Sair do Modo Foco</span>
+            <span className="text-[10px] opacity-60 font-mono px-1 rounded bg-black/5 dark:bg-white/10">Esc</span>
+          </button>
+        </div>
+      )}
+
       <div className="max-w-3xl mx-auto space-y-10">
         {/* Book Cover Showcase before the Introduction (on the first chapter) */}
         {isFirstChapter && book.coverImageUrl && (
@@ -435,7 +511,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       key={pIdx}
                       className={`${paragraphFontClass} text-justify ${
                         sIdx === 0 && pIdx === 0
-                          ? 'first-letter:text-4xl first-letter:font-editorial first-letter:float-left first-letter:mr-2.5 first-letter:leading-none first-letter:text-amber-700 dark:first-letter:text-amber-400'
+                          ? 'first-letter:text-5xl first-letter:font-editorial first-letter:float-left first-letter:mr-3.5 first-letter:font-bold first-letter:leading-none first-letter:text-amber-600 dark:first-letter:text-amber-400 first-letter:pt-1'
                           : ''
                       }`}
                     >
@@ -571,6 +647,86 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             <ChevronRight className="w-4 h-4" />
           </button>
         </footer>
+      </div>
+
+      {/* Floating Glassmorphic Reading Dock (Antigravity HUD) */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 no-print transition-all duration-300">
+        <div
+          className={`flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-2 rounded-full border shadow-2xl backdrop-blur-xl ${
+            theme === 'dark'
+              ? 'bg-slate-950/85 border-slate-800/80 text-slate-200 shadow-black/70'
+              : theme === 'sepia'
+              ? 'bg-[#ece4d0]/90 border-[#d8c7a7] text-[#2c2217] shadow-amber-950/15'
+              : 'bg-white/90 border-slate-200 text-slate-800 shadow-slate-900/10'
+          }`}
+        >
+          {/* Prev Chapter */}
+          <button
+            onClick={onPrevChapter}
+            disabled={!hasPrev}
+            className="p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            title="Capítulo Anterior"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          {/* Chapter & Scroll Indicator */}
+          <div className="flex items-center gap-1.5 px-2 text-xs font-mono font-medium border-x border-current/15">
+            <span className="opacity-70">
+              {chapter.number === 0 ? 'Intro' : `Cap. ${chapter.number}`}
+            </span>
+            <span className="opacity-30">•</span>
+            <span className="text-amber-500 font-bold">{Math.round(scrollPercent)}%</span>
+          </div>
+
+          {/* Mark as Read Toggle */}
+          <button
+            onClick={onToggleRead}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              isRead
+                ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/40'
+                : 'hover:bg-black/10 dark:hover:bg-white/10 opacity-80 hover:opacity-100'
+            }`}
+            title={isRead ? 'Capítulo concluído' : 'Marcar capítulo como concluído'}
+          >
+            <CheckCircle2 className={`w-3.5 h-3.5 ${isRead ? 'text-emerald-500' : ''}`} />
+            <span className="hidden sm:inline">{isRead ? 'Lido' : 'Concluir'}</span>
+          </button>
+
+          {/* Focus Mode Toggle */}
+          {onToggleFocusMode && (
+            <button
+              onClick={onToggleFocusMode}
+              className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
+                isFocusMode ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
+              }`}
+              title={isFocusMode ? 'Sair do Modo Foco (Esc)' : 'Entrar no Modo Foco (F)'}
+            >
+              {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
+          {/* AI Assistant Quick Trigger */}
+          <button
+            onClick={() => setShowAiPanel((prev) => !prev)}
+            className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
+              showAiPanel ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
+            }`}
+            title="Assistente de Estudo IA"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Next Chapter */}
+          <button
+            onClick={onNextChapter}
+            disabled={!hasNext}
+            className="p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            title="Próximo Capítulo"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </article>
   );
