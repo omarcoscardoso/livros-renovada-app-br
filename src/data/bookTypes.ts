@@ -76,4 +76,14 @@ export interface BookSummary {
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;
+  // Librarial Extended Metadata (Optional)
+  rating?: number;
+  reviewsCount?: number;
+  category?: string;
+  synopsis?: string;
+  pageCount?: number;
+  rankingText?: string;
+  authorBio?: string;
+  authorAvatarUrl?: string;
+  authorFollowers?: number;
 }

@@ -495,7 +495,9 @@ function LibraryApp({
                 bookTitle={activeBook.titlePt}
                 bookAuthor={activeBook.author}
                 theme={theme}
+                onChangeTheme={handleChangeTheme}
                 fontSize={fontSize}
+                onChangeFontSize={handleChangeFontSize}
                 isRead={!isCoverPage && readChaptersForActiveBook.includes(currentChapter.id)}
                 onToggleRead={() => handleToggleReadChapter(currentChapter.id)}
                 onPrevChapter={handlePrevChapter}

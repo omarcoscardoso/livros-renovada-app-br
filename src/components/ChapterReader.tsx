@@ -14,7 +14,17 @@ import {
   BookOpen,
   Maximize2,
   Minimize2,
+  Headphones,
+  Sliders,
+  Type,
+  AlignLeft,
+  X,
+  Highlighter,
 } from 'lucide-react';
+import { AudiobookPlayer } from './AudiobookPlayer';
+
+export type FontFamilyChoice = 'serif' | 'sans';
+export type LineHeightChoice = 'normal' | 'relaxed' | 'loose';
 
 interface ChapterReaderProps {
   book: BookInfo & { coverImageUrl?: string };
@@ -25,7 +35,9 @@ interface ChapterReaderProps {
   bookTitle: string;
   bookAuthor: string;
   theme: ReaderTheme;
+  onChangeTheme?: (theme: ReaderTheme) => void;
   fontSize: FontSize;
+  onChangeFontSize?: (size: FontSize) => void;
   isRead: boolean;
   onToggleRead: () => void;
   onPrevChapter: () => void;
@@ -46,7 +58,9 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   bookTitle,
   bookAuthor,
   theme,
+  onChangeTheme,
   fontSize,
+  onChangeFontSize,
   isRead,
   onToggleRead,
   onPrevChapter,
@@ -59,6 +73,43 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [showBilingual, setShowBilingual] = useState(false);
+
+  // Modern Reader Settings & Customization
+  const [fontFamily, setFontFamily] = useState<FontFamilyChoice>(() => {
+    try {
+      const saved = localStorage.getItem('ipr_reader_font_family') as FontFamilyChoice;
+      return saved === 'sans' ? 'sans' : 'serif';
+    } catch {
+      return 'serif';
+    }
+  });
+
+  const [lineHeight, setLineHeight] = useState<LineHeightChoice>(() => {
+    try {
+      const saved = localStorage.getItem('ipr_reader_line_height') as LineHeightChoice;
+      return saved === 'normal' || saved === 'loose' ? saved : 'relaxed';
+    } catch {
+      return 'relaxed';
+    }
+  });
+
+  const [isAudiobookOpen, setIsAudiobookOpen] = useState(false);
+  const [activeSpeakingParagraph, setActiveSpeakingParagraph] = useState<number | null>(null);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+
+  const handleSetFontFamily = (fam: FontFamilyChoice) => {
+    setFontFamily(fam);
+    try {
+      localStorage.setItem('ipr_reader_font_family', fam);
+    } catch {}
+  };
+
+  const handleSetLineHeight = (lh: LineHeightChoice) => {
+    setLineHeight(lh);
+    try {
+      localStorage.setItem('ipr_reader_line_height', lh);
+    } catch {}
+  };
 
   // Scroll tracking for ambient progress bar and HUD
   const [scrollPercent, setScrollPercent] = useState<number>(0);
@@ -473,55 +524,74 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
         {/* Body Sections */}
         <div className="space-y-12">
-          {chapter.sections.map((section, sIdx) => (
-            <section key={section.id} className="space-y-6">
-              <h2 className="text-lg sm:text-xl font-medium font-editorial tracking-normal pt-2 text-amber-700 dark:text-amber-400">
-                {section.titlePt}
-              </h2>
+          {(() => {
+            let runningParagraphIndex = 0;
+            return chapter.sections.map((section, sIdx) => (
+              <section key={section.id} className="space-y-6">
+                <h2 className="text-lg sm:text-xl font-medium font-editorial tracking-normal pt-2 text-amber-700 dark:text-amber-400">
+                  {section.titlePt}
+                </h2>
 
-              <div className="space-y-5 font-editorial">
-                {section.paragraphsPt.map((para, pIdx) => {
-                  const enPara = section.paragraphsEn?.[pIdx];
-                  if (showBilingual && enPara) {
+                <div className={`space-y-5 ${fontFamily === 'sans' ? 'font-sans' : 'font-editorial'}`}>
+                  {section.paragraphsPt.map((para, pIdx) => {
+                    const enPara = section.paragraphsEn?.[pIdx];
+                    const globalIdx = runningParagraphIndex++;
+                    const isSpeaking = activeSpeakingParagraph === globalIdx;
+
+                    const activeSpeechClass = isSpeaking
+                      ? 'bg-amber-500/15 border-l-4 border-amber-500 pl-3 py-1.5 rounded-r-lg transition-all duration-300'
+                      : '';
+
+                    const customLineHeightClass =
+                      lineHeight === 'loose'
+                        ? 'leading-loose'
+                        : lineHeight === 'normal'
+                        ? 'leading-normal'
+                        : 'leading-relaxed';
+
+                    if (showBilingual && enPara) {
+                      return (
+                        <div
+                          key={pIdx}
+                          className={`grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl border ${borderClass} ${activeSpeechClass}`}
+                        >
+                          <div>
+                            <span className="block text-[10px] font-sans uppercase tracking-wider opacity-50 mb-1">
+                              Português
+                            </span>
+                            <p className={`${paragraphFontClass} ${customLineHeightClass} text-justify`}>
+                              {para}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-sans uppercase tracking-wider opacity-50 mb-1">
+                              Original
+                            </span>
+                            <p className={`${paragraphFontClass} ${customLineHeightClass} text-justify opacity-80`}>
+                              {enPara}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div
+                      <p
                         key={pIdx}
-                        className={`grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl border ${borderClass}`}
+                        className={`${paragraphFontClass} ${customLineHeightClass} text-justify transition-colors ${activeSpeechClass} ${
+                          sIdx === 0 && pIdx === 0 && fontFamily === 'serif'
+                            ? 'first-letter:text-5xl first-letter:font-editorial first-letter:float-left first-letter:mr-3.5 first-letter:font-bold first-letter:leading-none first-letter:text-amber-600 dark:first-letter:text-amber-400 first-letter:pt-1'
+                            : ''
+                        }`}
                       >
-                        <div>
-                          <span className="block text-[10px] font-sans uppercase tracking-wider opacity-50 mb-1">
-                            Português
-                          </span>
-                          <p className={`${paragraphFontClass} text-justify`}>{para}</p>
-                        </div>
-                        <div>
-                          <span className="block text-[10px] font-sans uppercase tracking-wider opacity-50 mb-1">
-                            Original
-                          </span>
-                          <p className={`${paragraphFontClass} text-justify opacity-80`}>
-                            {enPara}
-                          </p>
-                        </div>
-                      </div>
+                        {para}
+                      </p>
                     );
-                  }
-
-                  return (
-                    <p
-                      key={pIdx}
-                      className={`${paragraphFontClass} text-justify ${
-                        sIdx === 0 && pIdx === 0
-                          ? 'first-letter:text-5xl first-letter:font-editorial first-letter:float-left first-letter:mr-3.5 first-letter:font-bold first-letter:leading-none first-letter:text-amber-600 dark:first-letter:text-amber-400 first-letter:pt-1'
-                          : ''
-                      }`}
-                    >
-                      {para}
-                    </p>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                  })}
+                </div>
+              </section>
+            ));
+          })()}
         </div>
 
         {/* Perguntas de Reflexão da Liderança */}
@@ -693,6 +763,28 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             <span className="hidden sm:inline">{isRead ? 'Lido' : 'Concluir'}</span>
           </button>
 
+          {/* Audiobook TTS Trigger */}
+          <button
+            onClick={() => setIsAudiobookOpen((prev) => !prev)}
+            className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
+              isAudiobookOpen ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
+            }`}
+            title="Ouvir Audiobook com narração inteligente"
+          >
+            <Headphones className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Typography & Reader Settings Trigger */}
+          <button
+            onClick={() => setShowSettingsPanel((prev) => !prev)}
+            className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
+              showSettingsPanel ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
+            }`}
+            title="Configurações de Leitura (Fonte, Espaçamento, Temas)"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+          </button>
+
           {/* Focus Mode Toggle */}
           {onToggleFocusMode && (
             <button
@@ -728,6 +820,124 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Reader Settings Popover */}
+      {showSettingsPanel && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-sm p-4 rounded-3xl border shadow-2xl backdrop-blur-2xl bg-slate-950/90 dark:bg-slate-900/90 border-slate-800 text-slate-100 space-y-3.5 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+              Personalizar Leitor
+            </h4>
+            <button
+              onClick={() => setShowSettingsPanel(false)}
+              className="p-1 rounded-full hover:bg-white/10 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Font Family */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] opacity-70 font-semibold">Tipografia:</span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                onClick={() => handleSetFontFamily('serif')}
+                className={`py-1.5 px-3 rounded-xl border text-center font-editorial transition-colors cursor-pointer ${
+                  fontFamily === 'serif'
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    : 'border-white/10 hover:border-white/20'
+                }`}
+              >
+                Editorial (Serif)
+              </button>
+              <button
+                onClick={() => handleSetFontFamily('sans')}
+                className={`py-1.5 px-3 rounded-xl border text-center font-sans transition-colors cursor-pointer ${
+                  fontFamily === 'sans'
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    : 'border-white/10 hover:border-white/20'
+                }`}
+              >
+                Moderna (Sans)
+              </button>
+            </div>
+          </div>
+
+          {/* Line Height */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] opacity-70 font-semibold">Espaçamento entre Linhas:</span>
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
+              <button
+                onClick={() => handleSetLineHeight('normal')}
+                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
+                  lineHeight === 'normal'
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    : 'border-white/10 hover:border-white/20'
+                }`}
+              >
+                Normal
+              </button>
+              <button
+                onClick={() => handleSetLineHeight('relaxed')}
+                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
+                  lineHeight === 'relaxed'
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    : 'border-white/10 hover:border-white/20'
+                }`}
+              >
+                Médio
+              </button>
+              <button
+                onClick={() => handleSetLineHeight('loose')}
+                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
+                  lineHeight === 'loose'
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    : 'border-white/10 hover:border-white/20'
+                }`}
+              >
+                Amplo
+              </button>
+            </div>
+          </div>
+
+          {/* Font Size */}
+          {onChangeFontSize && (
+            <div className="space-y-1.5">
+              <span className="text-[11px] opacity-70 font-semibold">Tamanho da Fonte:</span>
+              <div className="grid grid-cols-4 gap-1 text-xs">
+                {(['sm', 'base', 'lg', 'xl'] as FontSize[]).map((sz) => (
+                  <button
+                    key={sz}
+                    onClick={() => onChangeFontSize(sz)}
+                    className={`py-1 rounded-xl border text-center uppercase font-mono transition-colors cursor-pointer ${
+                      fontSize === sz
+                        ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {sz}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Floating Audiobook Player (TTS) */}
+      {isAudiobookOpen && (
+        <AudiobookPlayer
+          paragraphs={chapter.sections ? chapter.sections.flatMap((s) => s.paragraphsPt) : []}
+          bookTitle={bookTitle}
+          chapterTitle={chapter.titlePt}
+          theme={theme}
+          onClose={() => {
+            setIsAudiobookOpen(false);
+            setActiveSpeakingParagraph(null);
+          }}
+          onParagraphChange={(idx) => setActiveSpeakingParagraph(idx)}
+        />
+      )}
     </article>
   );
 };
