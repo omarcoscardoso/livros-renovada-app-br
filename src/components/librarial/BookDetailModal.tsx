@@ -17,8 +17,11 @@ import {
   UserCheck,
   UserPlus,
   Loader2,
+  Download,
 } from 'lucide-react';
 import { Book, LibrarialTheme } from '../../types/librarial';
+import { generateStandaloneBookHtml } from '../../data/bookData';
+import { generateBookPdf } from '../../utils/pdfGenerator';
 
 interface BookDetailModalProps {
   isOpen: boolean;
@@ -55,6 +58,59 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   // Gemini AI Executive Summary generation state
   const [isGeneratingAiSummary, setIsGeneratingAiSummary] = useState(false);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
+
+  // Offline export states (SOP Phase 5)
+  const [isExporting, setIsExporting] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<string | null>(null);
+
+  const fetchFullBookAndChapters = async () => {
+    const res = await fetch(`/api/books/${encodeURIComponent(book?.id || '')}`);
+    if (!res.ok) throw new Error('Falha ao carregar capítulos da obra.');
+    const data = await res.json();
+    return data.book;
+  };
+
+  const handleExportHtml = async () => {
+    setIsExporting(true);
+    try {
+      const fullBook = await fetchFullBookAndChapters();
+      const html = generateStandaloneBookHtml(fullBook, fullBook.chapters || []);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = (book?.titlePt || 'Livro')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]/g, '_')
+        .replace(/_+/g, '_');
+      a.download = `${safeName}_Livro_Completo.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Erro ao exportar HTML:', err);
+      alert('Não foi possível gerar o arquivo HTML standalone.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    setPdfProgress('Iniciando...');
+    try {
+      const fullBook = await fetchFullBookAndChapters();
+      await generateBookPdf(fullBook, fullBook.chapters || [], (status) => {
+        setPdfProgress(status.length > 18 ? status.slice(0, 16) + '...' : status);
+      });
+    } catch (err) {
+      console.error('Erro ao exportar PDF:', err);
+      alert('Não foi possível diagramar o PDF do livro.');
+    } finally {
+      setIsExporting(false);
+      setPdfProgress(null);
+    }
+  };
 
   if (!isOpen || !book) return null;
 
@@ -476,6 +532,43 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+
+              {/* Formatos de Entrega & Exportação Offline (SOP Fase 5B e 5C) */}
+              <div
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${cardSurfaceBg}`}
+              >
+                <div>
+                  <h4 className="text-xs font-bold text-current">Formatos de Entrega Offline</h4>
+                  <p className={`text-[11px] ${mutedText}`}>
+                    Baixe o e-book completo em arquivo autônomo para leitura sem internet
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportHtml}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/15 dark:border-white/15 hover:border-[#5C6BC0] hover:text-[#5C6BC0] text-xs font-semibold transition-all cursor-pointer"
+                    title="Baixar Livro em Arquivo Único HTML (.html) Standalone"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#5C6BC0]" />
+                    <span>HTML Offline</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportPdf}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-300 hover:bg-amber-500/25 text-xs font-bold transition-all cursor-pointer"
+                    title="Gerar e Baixar E-Book em PDF Real diagramado via jsPDF"
+                  >
+                    {isExporting && pdfProgress ? (
+                      <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    <span>{pdfProgress || 'E-Book em PDF'}</span>
+                  </button>
+                </div>
               </div>
             </>
           ) : (

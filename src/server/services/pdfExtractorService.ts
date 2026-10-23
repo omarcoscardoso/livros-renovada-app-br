@@ -70,9 +70,15 @@ export class PdfExtractorService {
     const pdf = await getDocumentProxy(uint8Array);
     const { totalPages, text } = await extractText(pdf, { mergePages: false });
 
-    const pages = Array.isArray(text)
-      ? text.map((p) => this.cleanExtractedText(String(p || '')))
-      : [this.cleanExtractedText(String(text || ''))];
+    let rawPages = Array.isArray(text)
+      ? text.map((p) => String(p || ''))
+      : [String(text || '')];
+
+    // Phase 2, Step 3.1: Expurgar cabeçalhos e rodapés de corrida repetitivos
+    rawPages = this.stripRunningHeadersAndFooters(rawPages);
+
+    // Phase 2, Steps 3.2 & 3.3: Desfazer quebras forçadas e normalizar tipografia por página
+    const pages = rawPages.map((p) => this.cleanExtractedText(p));
 
     return {
       totalPages: totalPages || pages.length,
@@ -404,13 +410,139 @@ export class PdfExtractorService {
     };
   }
 
-  private cleanExtractedText(raw: string): string {
-    return raw
+  /**
+   * Phase 2, Step 3.1: Identifica e expurga cabeçalhos e rodapés de corrida repetitivos
+   * e números de página isolados em todas as páginas do livro.
+   */
+  public stripRunningHeadersAndFooters(pages: string[]): string[] {
+    if (pages.length <= 2) return pages;
+
+    // Frequência das primeiras 2 linhas de cada página
+    const headerFreq = new Map<string, number>();
+    for (const page of pages) {
+      const lines = page.split('\n').map((l) => l.trim()).filter(Boolean);
+      for (let i = 0; i < Math.min(2, lines.length); i++) {
+        const candidate = lines[i];
+        if (candidate.length >= 3 && candidate.length <= 65) {
+          headerFreq.set(candidate, (headerFreq.get(candidate) || 0) + 1);
+        }
+      }
+    }
+
+    // Limiar: linha repetida em >20% das páginas (ou >= 3 páginas) é tratada como running header
+    const threshold = Math.max(3, Math.floor(pages.length * 0.2));
+    const runningHeaders = new Set<string>();
+    for (const [line, count] of headerFreq.entries()) {
+      if (count >= threshold) {
+        runningHeaders.add(line);
+      }
+    }
+
+    return pages.map((page) => {
+      let lines = page.split('\n');
+
+      // Remove números isolados e cabeçalhos de corrida no topo
+      while (lines.length > 0) {
+        const first = lines[0].trim();
+        const isIsolatedNum =
+          /^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(first) ||
+          /^(?:p[aá]gina|page)\s+\d{1,4}\s*$/i.test(first);
+        const isRunning = runningHeaders.has(first);
+
+        if (isIsolatedNum || isRunning) {
+          lines.shift();
+        } else {
+          break;
+        }
+      }
+
+      // Remove números isolados e rodapés repetitivos na base
+      while (lines.length > 0) {
+        const last = lines[lines.length - 1].trim();
+        const isIsolatedNum =
+          /^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(last) ||
+          /^(?:p[aá]gina|page)\s+\d{1,4}\s*$/i.test(last);
+        const isRunning = runningHeaders.has(last);
+
+        if (isIsolatedNum || isRunning) {
+          lines.pop();
+        } else {
+          break;
+        }
+      }
+
+      return lines.join('\n');
+    });
+  }
+
+  /**
+   * Phase 2, Steps 3.2 & 3.3: Higienização rigorosa, dewrapping de linhas cortadas
+   * e normalização tipográfica.
+   */
+  public cleanExtractedText(raw: string): string {
+    if (!raw) return '';
+
+    // 1. Normalização de quebras de linha e remoção de caracteres de controle
+    let text = raw
       .replace(/\r\n/g, '\n')
       .replace(/[ \t]+/g, ' ')
-      .replace(/-\n([a-zà-ÿ])/gi, '$1')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+    // 2. Correção de anomalias conhecidas de OCR
+    text = text
+      .replace(/C™te\s*d[’']Ivoire/g, 'Côte d’Ivoire')
+      .replace(/C™te/g, 'Côte');
+
+    // 3. Normalização tipográfica (travessões e aspas)
+    text = text
+      .replace(/--/g, '—')
+      .replace(/\s+-\s+/g, ' — ')
+      .replace(/[“”]/g, '"');
+
+    // 4. Desfazimento de quebras com hífen: transi-\nção -> transição
+    text = text.replace(/-\n+(\p{L})/gu, '$1');
+
+    // 5. Dewrapping de quebras de coluna forçadas sem pontuação terminal
+    const rawParagraphs = text.split(/\n{2,}/);
+    const cleanedParas: string[] = [];
+
+    for (const para of rawParagraphs) {
+      const lines = para
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length <= 1) {
+        if (lines[0]) cleanedParas.push(lines[0]);
+        continue;
+      }
+
+      let joined = '';
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!joined) {
+          joined = line;
+          continue;
+        }
+
+        const prevEndsWithPunct = /[.!?:;—"']$/.test(joined);
+        const isHeadingLike = /^(?:cap[íi]tulo|chapter|parte|part|[A-ZÀ-Ú\s]{4,60}$)/i.test(line);
+        const isAuthorOrMeta = /^(?:by|por|autor|author|copyright|editora|published by|publicado por|\(c\)|©)\b/i.test(line);
+        const isTitleLine = line.length <= 50 && /^[A-ZÀ-Ú0-9\s:—-]+$/.test(line);
+
+        if (prevEndsWithPunct || isHeadingLike || isAuthorOrMeta || isTitleLine) {
+          joined += '\n\n' + line;
+        } else {
+          joined += ' ' + line;
+        }
+      }
+
+      if (joined.trim()) {
+        cleanedParas.push(joined.trim());
+      }
+    }
+
+    return cleanedParas.join('\n\n').trim();
   }
 
   /**

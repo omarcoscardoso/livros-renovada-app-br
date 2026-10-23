@@ -327,12 +327,15 @@ export class GeminiConversionService {
       .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1500)}`)
       .join('\n\n');
 
-    const outlinePrompt = `Você é um editor literário e tradutor teológico sênior.
-Analise este livro em PDF (${extracted.totalPages} páginas) e estruture seus metadados e o plano completo de capítulos em Português do Brasil.
-Se o livro estiver em inglês ou outro idioma, traduza os títulos e subtítulos fielmente para o Português do Brasil.
+    const outlinePrompt = `Você é um editor literário sênior, teólogo e arquiteto de conversão de livros digitais (conforme o Guia Técnico de Engenharia de E-Books).
+Analise as páginas extraídas deste livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor:
+1. Mapeamento de Front Matter: Capa (normalmente página 1), Folha de Rosto, Créditos Legais (Ano, Editora), Sumário / Índice.
+2. Identificação do Corpo Principal: Introdução/Prefácio (se houver, com número 0), Capítulos numerados sequencialmente (1 a N), e Apêndices práticos de encerramento (se houver).
+3. Preservação fiel dos limites de páginas originais (startPage a endPage) para cada capítulo.
+4. Título e subtítulo elegantes em Português do Brasil.
 ${hints.titlePt ? `Título sugerido pelo usuário: "${hints.titlePt}"` : ''}
 ${hints.author ? `Autor sugerido pelo usuário: "${hints.author}"` : ''}
-${customInstructions ? `Instruções adicionais: ${customInstructions}` : ''}
+${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}
 
 Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Math.max(1, extracted.totalPages)} (entre 1 e 15 capítulos, conforme a estrutura real da obra).`;
 
@@ -402,11 +405,33 @@ Divida o livro em capítulos lógicos cobrindo todas as páginas de 1 até ${Mat
         .map((p, i) => `[Página ${startIdx + i + 1}]\n${p}`)
         .join('\n\n');
 
-      const chapterPrompt = `Estruture integralmente o Capítulo "${plan.titlePt}" (Páginas ${plan.startPage} a ${plan.endPage}) do livro "${outlineJson.titlePt || hints.titlePt || localBaseline.titlePt}".
-Regras obrigatórias:
-1. Todo o conteúdo em \`titlePt\`, \`subtitlePt\`, \`summaryPt\`, \`keyPointsPt\`, \`studyQuestionsPt\` e \`paragraphsPt\` DEVE estar em Português do Brasil claro, elegante e fiel ao texto original. Se o original estiver em outro idioma, faça a tradução completa e fluente para o Português do Brasil.
-2. Divida o capítulo em seções temáticas bem organizadas (\`sections\`), preservando os parágrafos ricos e detalhados da obra (não faça apenas um resumo curto; mantenha o conteúdo de leitura completo dos parágrafos daquelas páginas).
-3. Crie um \`summaryPt\` executivo inspirador, de 3 a 5 \`keyPointsPt\` e de 3 a 4 \`studyQuestionsPt\` práticas para reflexão e estudo em grupo.`;
+      const chapterPrompt = `Você é um tradutor literário sênior e mentor pastoral especializado na conversão de livros digitais para o Português do Brasil.
+Estruture integralmente o Capítulo "${plan.titlePt}" (Páginas ${plan.startPage} a ${plan.endPage}) do livro "${outlineJson.titlePt || hints.titlePt || localBaseline.titlePt}" de ${outlineJson.author || hints.author || localBaseline.author}.
+
+DIRETRIZES TÉCNICAS E EDITORIAIS OBRIGATÓRIAS (SOP DE PIPELINE DE CONVERSÃO):
+
+1. GLOSSÁRIO DE DOMÍNIO E EQUIVALÊNCIAS OBRIGATÓRIAS (PT-BR):
+   - "Cell Church" -> "Igreja em Células"
+   - "Church with cells" -> "Igreja com células"
+   - "District / Zone" -> "Distrito / Zona"
+   - "Home groups / Life groups" -> "Grupos caseiros / Grupos de vida"
+   - "Icebreaker" -> "Quebra-gelo"
+   - "Soul therapy" -> "Terapia da alma"
+   - "Principle of Twelve" -> "Princípio dos Doze (G12)"
+   - "First Step Encounter" -> "Encontro de Primeiro Passo"
+   - "Koinonitis" -> "Koinonite"
+
+2. PRESERVAÇÃO DO TOM DE VOZ E DA NARRATIVA DO AUTOR:
+   - Narrativa em 1ª Pessoa: mantenha a autenticidade, o calor, a vulnerabilidade e o humor das anedotas pessoais relatadas pelo autor.
+   - Terminologia Bíblica: utilize as versões bíblicas consagradas no Brasil (ARA / NVI), adaptando nomes de livros bíblicos e referências para a grafia em Português do Brasil (ex.: Exodus -> Êxodo, James -> Tiago, Matthew -> Mateus).
+   - Paragrafação Espelhada: os parágrafos em paragraphsPt devem manter correspondência com paragraphsEn para conferência cruzada.
+
+3. CONTEÚDO INTEGRAL E METADADOS DIDÁTICOS:
+   - Jamais faça resumos curtos no lugar do texto: traduza e transcreva os parágrafos densos e completos de cada seção daquele intervalo de páginas.
+   - summaryPt: Resumo executivo de 2 a 3 frases capturando a tese central do capítulo.
+   - keyPointsPt: 4 a 8 pilares fundamentais do capítulo.
+   - studyQuestionsPt: 3 a 5 perguntas de reflexão profunda para aplicação prática em grupos celulares e formação de liderança.
+   - estimatedReadTimeMinutes: calculado na taxa de ~180 a 200 palavras por minuto.`;
 
       const chapterInputs: any[] = [];
       if (!hasSelectableText && pdfBase64) {

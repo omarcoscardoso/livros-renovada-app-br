@@ -263,4 +263,35 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(metadata.category).toBe('Liderança');
     expect(metadata.source).toBe('local');
   });
+
+  it('deve executar o pipeline de higienização de texto (Fase 2: running headers, dewrapping e OCR)', () => {
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+
+    // Teste de eliminação de running headers e footers repetitivos
+    const rawPages = [
+      'THE CELL CHURCH\nCapítulo 1\nO vento começou a soprar em Viamão.\n1',
+      'THE CELL CHURCH\nCapítulo 1 continua aqui.\nA visão celular se expande dia a dia.\n2',
+      'THE CELL CHURCH\nCapítulo 1 parte 3.\nReunião de discipulado nos lares.\n3',
+      'THE CELL CHURCH\nCapítulo 1 parte 4.\nConclusão da lição prática da semana.\n4',
+    ];
+
+    const stripped = extractor.stripRunningHeadersAndFooters(rawPages);
+    for (const page of stripped) {
+      expect(page).not.toContain('THE CELL CHURCH');
+      expect(page.split('\n')[0]).not.toBe('THE CELL CHURCH');
+      // Não deve terminar com número isolado de página
+      const lastLine = page.trim().split('\n').pop() || '';
+      expect(/^\d+$/.test(lastLine)).toBe(false);
+    }
+
+    // Teste de dewrapping e normalização tipográfica
+    const noisyText =
+      'Esta é uma frase de um livro que foi cor-\ntada ao meio pelo PDF sem pontuação\nterminal e continua perfeitamente.\n\nSegundo parágrafo em C™te d’Ivoire com travessão -- e aspas "citadas".';
+
+    const cleaned = extractor.cleanExtractedText(noisyText);
+    expect(cleaned).toContain('cortada ao meio pelo PDF sem pontuação terminal e continua perfeitamente.');
+    expect(cleaned).toContain('Côte d’Ivoire');
+    expect(cleaned).toContain('—');
+    expect(cleaned).not.toContain('cor-\ntada');
+  });
 });
