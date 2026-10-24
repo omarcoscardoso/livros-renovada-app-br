@@ -430,4 +430,147 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(cleaned).toContain('—');
     expect(cleaned).not.toContain('cor-\ntada');
   });
+
+  it('deve extrair metadados e estruturar o livro de António Damásio isolando o sumário de 7 páginas e identificando os capítulos numerados', async () => {
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+
+    const damasioPages = [
+      '', // 1: Capa
+      `ANTÔNIO DAMÁSIO
+O mistério da consciência
+Do corpo e das emoções ao conhecimento de si
+Tradução Laura Teixeira Motta
+Revisão técnica Luiz Henrique Martins Castro
+2ª reimpressão
+COMPANHIA DAS LETRAS`, // 2: Folha de rosto
+      `Copyright © 1999 by Antônio Damásio
+Título original The feeling of what happens
+Dados Internacionais de Catalogação na Publicação (cip) (Câmara Brasileira do Livro, SP, Brasil)
+Damásio, Antônio
+O mistério da consciência : do corpo e das emoções ao conhecimento de si / Antônio Damásio; tradução Laura Teixeira Motta. — São Paulo : Companhia das Letras, 2000.
+ISBN 85-359-0032-2
+1. Consciência 2. Consciência - Aspectos psicológicos 3. Emoções - Aspectos psicológicos
+00-2652 CDD-153
+EDITORA SCHWARCZ LTDA.`, // 3: Copyright & CIP
+      'Para Hanna', // 4: Dedicatória
+      'Ou a cachoeira, ou música ouvida com tanta atenção...\nT. S. Eliot, Four quartets', // 5: Epígrafe
+      `Sumário
+PARTE 1 — INTRODUÇÃO ................................................15
+1. Sair à luz ..............................................................................17
+Sair à luz ..................................................................................17
+Ausente sem ter partido ...........................................................20
+O problema da consciência ......................................................24
+PARTE 2 – SENTIR E CONHECER ......................................53
+2. Emoção e sentimento ...........................................................55`, // 6: Sumário p1
+      `O que são emoções? .................................................................74
+A função biológica das emoções ..............................................77
+3. A consciência central .........................................................112
+4. O vago sinal .......................................................................144`, // 7: Sumário p2
+      `PARTE 3 – BIOLOGIA DO CONHECIMENTO .................173
+5. O organismo e o objeto ......................................................175`, // 8: Sumário p3
+      `6. A produção da consciência central .....................................218
+7. A consciência ampliada .....................................................251`, // 9: Sumário p4
+      `8. A neurologia da consciência ..............................................299`, // 10: Sumário p5
+      `PARTE 4 – DESTINADO A CONHECER ...........................351
+9. Sentindo os sentimentos .....................................................353
+10. Usando a consciência .......................................................374`, // 11: Sumário p6
+      `11. Sob a luz ..........................................................................394
+APÊNDICE ..................................................................................401
+Notas ......................................................................................425
+Agradecimentos .....................................................................457`, // 12: Sumário p7
+      'PARTE 1\nINTRODUÇÃO', // 13: Divisor Parte 1
+      `1. Sair à luz
+SAIR A LUZ
+Sempre me fascina o momento exato em que, da platéia, vemos abrir-se a porta que dá para o palco e um artista sair à luz.
+Percebi há alguns anos que o poder que esse momento tem de nos emocionar nasce do fato de ele personificar um instante de nascimento.`, // 14: Cap 1
+      `2. Emoção e sentimento
+NOVAMENTE SOBRE A EMOÇÃO
+Sem exceção, homens e mulheres de todas as idades, culturas, níveis de instrução e econômicos têm emoções.
+À primeira vista, não existe nada caracteristicamente humano nas emoções.`, // 15 (cap 2)
+      `3. A consciência central
+O ESTUDO DA CONSCIÊNCIA
+É compreensível que nós, cientistas, lastimemos o fato de a consciência ser um fenômeno inteiramente pessoal e privado.
+Contudo, temos de encarar a situação e tirar proveito das desvantagens.`, // 16 (cap 3)
+      `4- O vago sinal
+LINGUAGEM E CONSCIÊNCIA
+Em várias ocasiões, quando ainda era estudante de medicina e durante minha residência em neurologia, lembro de ter perguntado...`, // 17 (cap 4)
+      `Apêndice: Notas sobre mente e cérebro
+UM PEQUENO GLOSSÁRIO
+O uso de palavras como imagens, padrões neurais, representações e mapas é cercado de dificuldades.`, // 18: Apêndice
+      `Notas
+1. SAIR À LUZ
+1. A consciência há muito tempo vem sendo um importante tema da filosofia.`, // 19: Notas
+      `Agradecimentos
+Meu primeiro agradecimento é para Seamus Heaney pela contribuição para o título do livro.`, // 20: Agradecimentos
+    ];
+
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    doc.text(damasioPages[1], 10, 20); // Folha de rosto
+    doc.addPage();
+    doc.text(damasioPages[2], 10, 20); // Ficha catalográfica
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+    // 1. Validação de Extração de Metadados
+    const metadata = await extractor.extractLocalMetadata(pdfBuffer, 'Antonio_Damasio_O_misterio_da_consciencia.pdf');
+    expect(metadata.titlePt).toContain('O Mistério da Consciência');
+    expect(metadata.subtitlePt).toContain('Do Corpo e das Emoções ao Conhecimento de Si');
+    expect(metadata.author).toContain('Antônio Damásio');
+    expect(metadata.publisher).toContain('Companhia das Letras');
+    expect([1999, 2000]).toContain(metadata.originalYear);
+    expect(metadata.category).toBe('Neurociência & Psicologia');
+
+    // 2. Validação da Estruturação e Isolamento do Sumário
+    const structured = extractor.buildStructuredBookFromPages(
+      {
+        totalPages: damasioPages.length,
+        pages: damasioPages,
+        fullText: damasioPages.join('\n\n'),
+      },
+      'Antonio_Damasio_O_misterio_da_consciencia.pdf',
+      {
+        titlePt: metadata.titlePt,
+        subtitlePt: metadata.subtitlePt,
+        author: metadata.author,
+        publisher: metadata.publisher,
+        originalYear: metadata.originalYear,
+      }
+    );
+
+    // Validação de isolamento do sumário:
+    // O sumário (páginas 6 a 12) NUNCA deve aparecer no texto de leitura de nenhum capítulo!
+    const allChaptersText = structured.chapters
+      .flatMap((c) => c.sections.flatMap((s) => s.paragraphsPt))
+      .join(' ');
+
+    expect(allChaptersText).not.toContain('PARTE 1 — INTRODUÇÃO ................................................15');
+    expect(allChaptersText).not.toContain('1. Sair à luz ..............................................................................17');
+    expect(allChaptersText).not.toContain('3. A consciência central .........................................................112');
+    expect(allChaptersText).not.toContain('Agradecimentos .....................................................................457');
+
+    // Validação de capítulos estruturados:
+    // Deve conter Dedicatória, Capítulos 1 a 4, Apêndice, Notas e Agradecimentos
+    const chapterTitles = structured.chapters.map((c) => c.titlePt);
+    expect(chapterTitles.some((t) => t.includes('Dedicatória'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('Sair à luz'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('Emoção e sentimento'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('A consciência central'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('O vago sinal'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('Apêndice'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('Notas'))).toBe(true);
+    expect(chapterTitles.some((t) => t.includes('Agradecimentos'))).toBe(true);
+
+    // Capítulo 3 NÃO deve ser o sumário! Deve ser o conteúdo de "A consciência central"
+    const ch3 = structured.chapters.find((c) => c.titlePt.includes('A consciência central'));
+    expect(ch3).toBeDefined();
+    expect(ch3?.sections[0].paragraphsPt[0]).toContain('É compreensível que nós, cientistas, lastimemos o fato de a consciência ser um fenômeno inteiramente pessoal');
+
+    // Validação da geração de HTML independente
+    const html = generateStandaloneBookHtml(structured, structured.chapters);
+    expect(html).toContain('O Mistério da Consciência');
+    expect(html).toContain('Do Corpo e das Emoções ao Conhecimento de Si');
+    expect(html).toContain('Antônio Damásio');
+    expect(html).toContain('É compreensível que nós, cientistas, lastimemos o fato');
+    expect(html).not.toContain('PARTE 1 — INTRODUÇÃO ................................................15');
+  });
 });

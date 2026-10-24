@@ -12,6 +12,7 @@ export interface ExtractedPdfData {
 
 export interface BookMetadataHints {
   titlePt?: string;
+  subtitlePt?: string;
   author?: string;
   originalYear?: number;
   publisher?: string;
@@ -37,7 +38,10 @@ export interface ExtractedLocalMetadata {
 
 function formatTitleCase(text: string): string {
   if (!text) return '';
-  const minorWords = new Set(['de', 'da', 'do', 'das', 'dos', 'em', 'e', 'of', 'and', 'the', 'in', 'a', 'an', 'por', 'by']);
+  const minorWords = new Set([
+    'de', 'da', 'do', 'das', 'dos', 'em', 'e', 'of', 'and', 'the', 'in', 'a', 'an',
+    'por', 'by', 'ao', 'aos', 'à', 'às', 'na', 'no', 'nas', 'nos', 'com', 'para', 'se'
+  ]);
   return text
     .toLowerCase()
     .split(/\s+/)
@@ -108,39 +112,80 @@ export class PdfExtractorService {
       // Ignore metadata read error, continue with text
     }
 
-    // 1. Year Extraction (copyright / publication date)
-    let originalYear = new Date().getFullYear();
-    const copyrightMatch =
-      firstPagesText.match(/(?:©|\(c\)|copyright)\s*(19\d{2}|20\d{2})/i) ||
-      firstPagesText.match(/\b(19\d{2}|20\d{2})\b/);
-    if (copyrightMatch) {
-      originalYear = parseInt(copyrightMatch[1], 10);
-    } else if (docMeta?.info?.CreationDate) {
-      const dateStr = String(docMeta.info.CreationDate);
-      const match = dateStr.match(/(19\d{2}|20\d{2})/);
-      if (match) {
-        originalYear = parseInt(match[1], 10);
+    // 0. Extração de Ficha Catalográfica / CIP (Câmara Brasileira do Livro / SNEL / Catalogação na publicação)
+    let cipAuthor = '';
+    let cipTitle = '';
+    let cipSubtitle = '';
+    let cipPublisher = '';
+    let cipYear: number | null = null;
+    let cipCategory = '';
+
+    const cipMatch = firstPagesText.match(
+      /(?:Dados Internacionais de Catalogação na Publicação|Catalogação na fonte|CIP-Brasil|Ficha catalográfica)[\s\S]+?(?=Índice para catálogo|Todos os direitos|\n{3,}|$)/i
+    );
+
+    if (cipMatch) {
+      const cipText = cipMatch[0];
+
+      // Autor no formato Sobrenome, Nome
+      const cipAuthorMatch = cipText.match(
+        /([A-ZÀ-Ú][a-zà-ú]+),\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)/
+      );
+      if (cipAuthorMatch) {
+        cipAuthor = `${cipAuthorMatch[2]} ${cipAuthorMatch[1]}`.trim();
+      }
+
+      // Título : Subtítulo / Autor ... — Cidade : Editora, Ano
+      const cipTitleSubMatch = cipText.match(
+        /([A-ZÀ-Úa-zà-ú0-9\s—,'.]+?)\s*:\s*([A-ZÀ-Úa-zà-ú0-9\s—,'.]+?)\s*\/\s*([^.—]+?)[.—]\s*—\s*([^:]+?)\s*:\s*([^,]+?),\s*(\d{4})/
+      );
+      if (cipTitleSubMatch) {
+        const rawTitle = cipTitleSubMatch[1]
+          .replace(/^[A-ZÀ-Ú][a-zà-ú]+,\s*[A-ZÀ-Ú][a-zà-ú]+\s*/i, '')
+          .replace(/\n+/g, ' ')
+          .trim();
+        cipTitle = formatTitleCase(rawTitle);
+        cipSubtitle = formatTitleCase(cipTitleSubMatch[2].replace(/\n+/g, ' ').trim());
+        cipPublisher = formatTitleCase(cipTitleSubMatch[5].replace(/\n+/g, ' ').trim());
+        cipYear = parseInt(cipTitleSubMatch[6], 10);
+      }
+
+      // Identificação de assuntos/CDD da CIP
+      const subjectMatch = cipText.match(/\b1\.\s*([^2\n]+)/);
+      if (subjectMatch) {
+        const subj = subjectMatch[1].toLowerCase();
+        if (/consci[êe]ncia|neuro|mente|c[ée]rebro|psico/i.test(subj)) {
+          cipCategory = 'Neurociência & Psicologia';
+        } else if (/teologia|b[íi]blia|deus|crist[ãa]/i.test(subj)) {
+          cipCategory = 'Teologia';
+        } else if (/filosofia/i.test(subj)) {
+          cipCategory = 'Filosofia';
+        }
       }
     }
 
-    // 2. Author Extraction
-    let author = '';
-    const authorPatterns = [
-      /(?:by|por|autor|author)(?::|\s)\s*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]{2,35})/i,
-      /(?:by|por)\s*\n+([A-ZÀ-Ú\s]{3,35})\b/i,
-      /(?:©|\(c\))\s*\d{4}\s+by\s+([A-ZÀ-Úa-zà-ú\s]{3,35})/i,
-    ];
+    // 1. Extração de Autor preliminar (a partir de CIP ou padrões de copyright/by/por)
+    let author = cipAuthor || '';
+    if (!author) {
+      const authorPatterns = [
+        /(?:by|por|autor|author)(?::|\s)\s*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]{2,35})/i,
+        /(?:by|por)\s*\n+([A-ZÀ-Ú\s]{3,35})\b/i,
+        /(?:©|\(c\))\s*\d{4}\s+by\s+([A-ZÀ-Úa-zà-ú\s]{3,35})/i,
+      ];
 
-    for (const pat of authorPatterns) {
-      const m = firstPagesText.match(pat);
-      if (m && m[1]) {
-        const candidate = m[1].split('\n')[0].trim().replace(/[.,;]+$/, '');
-        if (
-          candidate.length >= 3 &&
-          !/chapter|copyright|rights|editora|publishing|press|books|livros|inc|ltda|corp/i.test(candidate)
-        ) {
-          author = formatTitleCase(candidate);
-          break;
+      for (const pat of authorPatterns) {
+        const m = firstPagesText.match(pat);
+        if (m && m[1]) {
+          const candidate = m[1].split('\n')[0].trim().replace(/[.,;]+$/, '');
+          if (
+            candidate.length >= 3 &&
+            !/chapter|copyright|rights|editora|publishing|press|books|livros|inc|ltda|corp/i.test(
+              candidate
+            )
+          ) {
+            author = formatTitleCase(candidate);
+            break;
+          }
         }
       }
     }
@@ -153,8 +198,98 @@ export class PdfExtractorService {
       }
     }
 
-    // 3. Title Extraction
-    let titlePt = '';
+    // 2. Extração da Folha de Rosto (páginas 1 a 4)
+    let titlePageTitle = '';
+    let titlePageSubtitle = '';
+    let titlePageAuthor = '';
+    let titlePagePublisher = '';
+
+    for (let pIdx = 0; pIdx < Math.min(4, pages.length); pIdx++) {
+      const pageText = pages[pIdx];
+      if (/Dados Internacionais de Catalogação|copyright ©|todos os direitos/i.test(pageText)) {
+        continue;
+      }
+      const lines = pageText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 2 && !/^\d+$/.test(l) && !/^page\s+\d+/i.test(l));
+
+      if (lines.length >= 2 && lines.length <= 15) {
+        const line0 = lines[0];
+        const line1 = lines[1];
+        const line2 = lines[2];
+        const lastLine = lines[lines.length - 1];
+
+        const isLine1ByAuthor = /^(?:by|por|autor|author)\b/i.test(line1);
+        const isLine0MatchesAuthor = Boolean(
+          author && line0.toLowerCase().includes(author.toLowerCase())
+        );
+
+        if (isLine1ByAuthor) {
+          titlePageTitle = formatTitleCase(line0);
+          if (!author) {
+            titlePageAuthor = formatTitleCase(
+              line1.replace(/^(?:by|por|autor|author)\s*[:.—-]?\s*/i, '')
+            );
+          }
+          if (line2 && !/^(?:by|por|copyright|isbn|tradu)/i.test(line2)) {
+            titlePageSubtitle = formatTitleCase(line2);
+          }
+        } else if (isLine0MatchesAuthor && line1 && line1.length >= 3 && line1.length <= 80) {
+          titlePageTitle = formatTitleCase(line1);
+          if (
+            line2 &&
+            line2.length >= 3 &&
+            line2.length <= 100 &&
+            !/tradu[çc][ãa]o|revis[ãa]o|edi[çc][ãa]o|editora|publicado/i.test(line2)
+          ) {
+            titlePageSubtitle = formatTitleCase(line2);
+          }
+        } else if (line0 && line0.length >= 3 && line0.length <= 80) {
+          titlePageTitle = formatTitleCase(line0);
+          if (
+            line1 &&
+            line1.length >= 3 &&
+            line1.length <= 100 &&
+            !/tradu[çc][ãa]o|revis[ãa]o|edi[çc][ãa]o|editora|publicado|por |by /i.test(line1)
+          ) {
+            titlePageSubtitle = formatTitleCase(line1);
+          }
+        }
+
+        if (
+          lastLine &&
+          /companhia das letras|editora|press|books|publica[çc]|vozes|record|rocco/i.test(lastLine)
+        ) {
+          titlePagePublisher = formatTitleCase(lastLine);
+        }
+
+        if (titlePageTitle) break;
+      }
+    }
+
+    if (!author && titlePageAuthor) {
+      author = titlePageAuthor;
+    }
+
+    // 3. Extração de Ano (copyright / publicação)
+    let originalYear = cipYear || new Date().getFullYear();
+    if (!cipYear) {
+      const copyrightMatch =
+        firstPagesText.match(/(?:©|\(c\)|copyright)\s*(19\d{2}|20\d{2})/i) ||
+        firstPagesText.match(/\b(19\d{2}|20\d{2})\b/);
+      if (copyrightMatch) {
+        originalYear = parseInt(copyrightMatch[1], 10);
+      } else if (docMeta?.info?.CreationDate) {
+        const dateStr = String(docMeta.info.CreationDate);
+        const match = dateStr.match(/(19\d{2}|20\d{2})/);
+        if (match) {
+          originalYear = parseInt(match[1], 10);
+        }
+      }
+    }
+
+    // 4. Extração de Título e Subtítulo
     const cleanFilename = originalFilename
       ? originalFilename
           .replace(/\.pdf$/i, '')
@@ -164,20 +299,13 @@ export class PdfExtractorService {
           .trim()
       : '';
 
-    // Check prominent title line in first pages
-    for (let i = 0; i < Math.min(3, pages.length); i++) {
-      const lines = pages[i]
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 2 && !/^\d+$/.test(l) && !/^page\s+\d+/i.test(l));
+    let titlePt = cipTitle || titlePageTitle || '';
+    let subtitlePt = cipSubtitle || titlePageSubtitle || '';
 
-      if (lines.length > 0) {
-        const firstLine = lines[0];
-        if (firstLine.length >= 3 && firstLine.length <= 60 && !/copyright|isbn|todos os direitos/i.test(firstLine)) {
-          titlePt = formatTitleCase(firstLine);
-          break;
-        }
-      }
+    // Se o título detectado for igual ao nome do autor, descarte e busque título real
+    if (titlePt && author && titlePt.toLowerCase() === author.toLowerCase()) {
+      titlePt = titlePageSubtitle || '';
+      subtitlePt = '';
     }
 
     if (!titlePt && docMeta?.info?.Title) {
@@ -188,7 +316,6 @@ export class PdfExtractorService {
     }
 
     if (!titlePt && cleanFilename) {
-      // If filename has "Title - Author" format
       if (cleanFilename.includes(' - ')) {
         const parts = cleanFilename.split(' - ');
         titlePt = formatTitleCase(parts[0].trim());
@@ -200,48 +327,91 @@ export class PdfExtractorService {
       }
     }
 
-    if (!author && cleanFilename && cleanFilename.includes(' - ')) {
-      const parts = cleanFilename.split(' - ');
-      if (parts[1]) {
-        author = formatTitleCase(parts[1].trim());
-      }
-    }
-
     if (!titlePt) titlePt = 'Livro sem Título';
     if (!author) author = 'Autor Desconhecido';
 
-    // 4. Publisher Extraction
-    let publisher = 'Edição Digital — Biblioteca IPR Viamão';
-    const pubMatch = firstPagesText.match(/(?:published by|publicado por|editora)\s+([A-ZÀ-Úa-zà-ú0-9\s,.-]{3,60})/i);
-    if (pubMatch && pubMatch[1]) {
-      publisher = pubMatch[1].split('\n')[0].trim().replace(/[.,;]+$/, '');
+    // 5. Extração de Editora / Publisher
+    let publisher = cipPublisher || titlePagePublisher || '';
+    if (!publisher) {
+      const pubMatch =
+        firstPagesText.match(
+          /(?:published by|publicado por|editora|editores)\s+([A-ZÀ-Úa-zà-ú0-9\s,.-]{3,60})/i
+        ) ||
+        firstPagesText.match(
+          /\b(companhia das letras|editora vida|editora vozes|cpad|vida nova|editora record|rocco|editora intr[íi]nseca|sextante|zahar)\b/i
+        );
+      if (pubMatch && pubMatch[1]) {
+        publisher = formatTitleCase(pubMatch[1].split('\n')[0].trim().replace(/[.,;]+$/, ''));
+      }
+    }
+    if (!publisher) {
+      publisher = 'Edição Digital';
     }
 
-    // 5. Category & Synopsis detection
-    let category = 'Vida Cristã';
-    let synopsis = `Obra "${titlePt}" de ${author}. Leitura e estudo bíblico selecionado para edificação da igreja e fortalecimento espiritual.`;
+    // 6. Categoria e Sinopse
+    let category = cipCategory || 'Geral';
+    let synopsis = `Obra "${titlePt}" de ${author}. Leitura e estudo aprofundado com rigor e integridade textual.`;
 
-    const normalized = (firstPagesText + ' ' + titlePt)
+    const normalized = (firstPagesText + ' ' + titlePt + ' ' + subtitlePt)
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    if (normalized.includes('celula') || normalized.includes('cell group') || normalized.includes('pequeno grupo')) {
+    if (
+      normalized.includes('consciencia') ||
+      normalized.includes('cerebro') ||
+      normalized.includes('neurolog') ||
+      normalized.includes('neuroci') ||
+      normalized.includes('emoc') ||
+      normalized.includes('psicol')
+    ) {
+      category = 'Neurociência & Psicologia';
+      synopsis = `Investigação aprofundada de ${author} sobre os fundamentos biológicos da mente, emoção e a construção da consciência de si.`;
+    } else if (
+      normalized.includes('celula') ||
+      normalized.includes('cell group') ||
+      normalized.includes('pequeno grupo')
+    ) {
       category = 'Células';
       synopsis = `Estudo fundamental sobre a visão e dinâmica da igreja em células e pequenos grupos.`;
-    } else if (normalized.includes('lider') || normalized.includes('lideranca') || normalized.includes('leadership')) {
+    } else if (
+      normalized.includes('lider') ||
+      normalized.includes('lideranca') ||
+      normalized.includes('leadership')
+    ) {
       category = 'Liderança';
       synopsis = `Princípios essenciais para formação, mentoria e capacitação de líderes ministeriais.`;
-    } else if (normalized.includes('discipulado') || normalized.includes('disciple')) {
+    } else if (
+      normalized.includes('discipulado') ||
+      normalized.includes('disciple')
+    ) {
       category = 'Discipulado';
-      synopsis = `Guia prático para acompanhamento espiritual, consolidação e formação de discípulos de Jesus Cristo.`;
-    } else if (normalized.includes('teologia') || normalized.includes('doutrina') || normalized.includes('theology')) {
+      synopsis = `Guia prático para acompanhamento espiritual, consolidação e formação de discípulos.`;
+    } else if (
+      normalized.includes('teologia') ||
+      normalized.includes('doutrina') ||
+      normalized.includes('theology')
+    ) {
       category = 'Teologia';
       synopsis = `Fundamentos teológicos e doutrinários para aprofundamento das Escrituras Sagradas.`;
+    } else if (
+      normalized.includes('filosofia') ||
+      normalized.includes('filosof')
+    ) {
+      category = 'Filosofia';
+      synopsis = `Ensaio e reflexões filosóficas sobre o conhecimento, a mente e a existência humana.`;
+    } else if (
+      normalized.includes('vida crista') ||
+      normalized.includes('oracao') ||
+      normalized.includes('fe')
+    ) {
+      category = 'Vida Cristã';
+      synopsis = `Leitura para edificação pessoal, oração e fortalecimento da caminhada diária de fé.`;
     }
 
     return {
       titlePt,
+      subtitlePt: subtitlePt || undefined,
       author,
       originalYear,
       publisher,
@@ -546,7 +716,24 @@ export class PdfExtractorService {
   }
 
   /**
-   * Identifica se uma página pertence ao Sumário / Índice do livro
+   * Verifica se uma linha corresponde à estrutura típica de entrada de Sumário (título + pontilhado/espaços + número de página)
+   */
+  public isTocLine(line: string): boolean {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 3) return false;
+    // 1. Linha terminando com sequência de pontos/espaços/tabs e número de página: "1. Sair à luz ... 17"
+    if (/(?:\.{2,}|\s{3,}|\t+)\s*\d{1,4}\s*$/.test(trimmed)) {
+      return true;
+    }
+    // 2. Linhas no padrão "Capítulo X ... 12" ou "Parte 1 ... 15"
+    if (/^(?:parte\s+\d+|parte\s+[ivxlcdm]+|cap[íi]tulo\s+\d+|\d+\s*[.—-]).*?\s+\d{1,4}$/i.test(trimmed)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Identifica se uma página isolada pertence ao Sumário / Índice do livro
    */
   public isTableOfContentsPage(pageText: string): boolean {
     if (!pageText) return false;
@@ -556,11 +743,9 @@ export class PdfExtractorService {
     const first5 = lines.slice(0, 5).join(' ').toLowerCase();
     const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
 
-    // Linhas com estrutura típica de sumário: Título ...... Número de página
-    const tocLinePattern = /^(?:cap[íi]tulo|chapter|\d+|introdu[çc][ãa]o|pref[áa]cio|[a-zà-ú\s]{3,40})\b.*?(?:\.{2,}|\s{3,}|\t+)\s*\d+\s*$/i;
     let tocLineCount = 0;
     for (const line of lines) {
-      if (tocLinePattern.test(line)) {
+      if (this.isTocLine(line)) {
         tocLineCount++;
       }
     }
@@ -570,6 +755,59 @@ export class PdfExtractorService {
     }
 
     return tocLineCount >= 3;
+  }
+
+  /**
+   * Identifica de maneira contínua o bloco integral de páginas do Sumário (incluindo sumários multi-páginas como páginas 6 a 12)
+   */
+  public identifyTableOfContentsPages(
+    pages: Array<{ pageNumber: number; text: string }>
+  ): Set<number> {
+    const tocPageNumbers = new Set<number>();
+    let inTocBlock = false;
+
+    for (const page of pages.slice(0, 30)) {
+      const pageText = page.text.trim();
+      if (!pageText) continue;
+
+      const lines = pageText.split('\n').map((l) => l.trim()).filter(Boolean);
+      const first5 = lines.slice(0, 5).join(' ').toLowerCase();
+      const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
+
+      let tocLineCount = 0;
+      for (const line of lines) {
+        if (this.isTocLine(line)) {
+          tocLineCount++;
+        }
+      }
+
+      if (hasTocHeading && (tocLineCount >= 1 || lines.length <= 35)) {
+        inTocBlock = true;
+        tocPageNumbers.add(page.pageNumber);
+        continue;
+      }
+
+      if (inTocBlock) {
+        // Continua o bloco de sumário se a página contiver entradas pontilhadas de índice
+        // e não for o início de um parágrafo narrativo longo de capítulo
+        const startsWithLongProse =
+          lines.length > 0 &&
+          lines[0].length > 70 &&
+          !this.isTocLine(lines[0]) &&
+          !this.isAnyDelimiter(lines[0]);
+
+        if (tocLineCount >= 2 && !startsWithLongProse) {
+          tocPageNumbers.add(page.pageNumber);
+        } else {
+          inTocBlock = false;
+        }
+      } else if (tocLineCount >= 4) {
+        inTocBlock = true;
+        tocPageNumbers.add(page.pageNumber);
+      }
+    }
+
+    return tocPageNumbers;
   }
 
   /**
@@ -607,30 +845,67 @@ export class PdfExtractorService {
   }
 
   /**
-   * Verifica se uma linha corresponde a qualquer delimitador estrutural (Capítulo, Prefácio, Introdução, Conclusão)
+   * Verifica se uma linha corresponde a qualquer delimitador estrutural (Parte, Capítulo, Prefácio, Introdução, Conclusão, Apêndice, Notas, Agradecimentos)
    */
   public isAnyDelimiter(line: string): boolean {
     const trimmed = line.trim();
     if (!trimmed || trimmed.length > 130) return false;
-    return /^(?:cap[íi]tulo|capitulo|chapter|pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|introdu[çc][ãa]o|introduction|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix)\b/i.test(
-      trimmed
-    );
+    if (
+      /^(?:cap[íi]tulo|capitulo|chapter|pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|introdu[çc][ãa]o|introduction|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix|notas|agradecimentos|parte\s+\d+|parte\s+[ivxlcdm]+)\b/i.test(
+        trimmed
+      )
+    ) {
+      return true;
+    }
+    // Padrão de capítulo numerado direto sem a palavra "Capítulo": "1. Sair à luz" ou "4- O vago sinal"
+    if (/^\d{1,2}\s*[.—-]\s+[A-ZÀ-Ú]/.test(trimmed)) {
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Identifica se uma linha atua como delimitador estrito de capítulo, prefácio ou introdução
+   * Identifica se uma linha atua como delimitador estrito de capítulo, prefácio, introdução ou seção estrutural
    */
   public matchDelimiter(
     line: string,
     nextLine?: string
   ): {
-    type: 'preface' | 'intro' | 'chapter' | 'conclusion' | 'appendix';
+    type: 'preface' | 'intro' | 'chapter' | 'conclusion' | 'appendix' | 'part';
     number?: number;
     title: string;
     consumedNextLine?: boolean;
   } | null {
     const trimmed = line.trim();
     if (!trimmed || trimmed.length > 130) return null;
+
+    // 0. Delimitador de Parte (PARTE 1, PARTE 2 – SENTIR E CONHECER)
+    const partRegex = /^(?:parte\s+([0-9ivxlcdm]+))\b(?:\s*[—–-]\s*(.*))?$/i;
+    const partMatch = trimmed.match(partRegex);
+    if (partMatch) {
+      const partNum = partMatch[1];
+      const rest = partMatch[2]?.trim() || '';
+      let title = `Parte ${partNum}`;
+      let consumedNextLine = false;
+
+      if (rest) {
+        title = `Parte ${partNum}: ${rest.replace(/^[:.—-\s]+/, '')}`;
+      } else if (
+        nextLine &&
+        nextLine.trim().length > 2 &&
+        nextLine.trim().length < 80 &&
+        !this.isAnyDelimiter(nextLine)
+      ) {
+        title = `Parte ${partNum}: ${nextLine.trim()}`;
+        consumedNextLine = true;
+      }
+
+      return {
+        type: 'part',
+        title,
+        consumedNextLine,
+      };
+    }
 
     // 1. Delimitador Prefácio (regra 3)
     const prefaceRegex = /^(?:pref[áa]cio|prefacio|preface|pr[óo]logo|prologue)\b(?:\s*[:.—-]?\s*(.*))?$/i;
@@ -660,7 +935,7 @@ export class PdfExtractorService {
       };
     }
 
-    // 2. Delimitador Capítulo (regra 2)
+    // 2. Delimitador Capítulo explícito: 'Capítulo 1', 'Capítulo 1: O Vento'
     const chapterRegex =
       /^(?:cap[íi]tulo|capitulo|chapter)\b(?:\s*[:.—-]?\s*([a-z0-9à-ú]+))?(?:\s*[:.—-]?\s*(.*))?$/i;
     const chapMatch = trimmed.match(chapterRegex);
@@ -695,7 +970,22 @@ export class PdfExtractorService {
       };
     }
 
-    // 3. Delimitador Introdução
+    // 3. Delimitador Capítulo numerado direto: '1. Sair à luz', '4- O vago sinal', '10. Usando a consciência'
+    const numberedChapRegex = /^(\d{1,2})\s*[.—-]\s*([A-ZÀ-Ú].*)$/;
+    const numMatch = trimmed.match(numberedChapRegex);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      const rest = numMatch[2].trim();
+      const title = `Capítulo ${num}: ${rest}`;
+      return {
+        type: 'chapter',
+        number: num,
+        title,
+        consumedNextLine: false,
+      };
+    }
+
+    // 4. Delimitador Introdução
     const introRegex = /^(?:introdu[çc][ãa]o|introduction)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const introMatch = trimmed.match(introRegex);
     if (introMatch) {
@@ -723,14 +1013,48 @@ export class PdfExtractorService {
       };
     }
 
-    // 4. Delimitador Conclusão / Apêndice / Epílogo
+    // 5. Delimitador Apêndice
+    const appRegex = /^(?:ap[êe]ndice|appendix)\b(?:\s*[:.—-]?\s*(.*))?$/i;
+    const appMatch = trimmed.match(appRegex);
+    if (appMatch) {
+      const rest = appMatch[1]?.trim() || '';
+      let title = 'Apêndice';
+      let consumedNextLine = false;
+
+      if (rest) {
+        title = `Apêndice: ${rest.replace(/^[:.—-\s]+/, '')}`;
+      } else if (
+        nextLine &&
+        nextLine.trim().length > 2 &&
+        nextLine.trim().length < 80 &&
+        !this.isAnyDelimiter(nextLine)
+      ) {
+        title = `Apêndice: ${nextLine.trim()}`;
+        consumedNextLine = true;
+      }
+
+      return {
+        type: 'appendix',
+        title,
+        consumedNextLine,
+      };
+    }
+
+    // 6. Delimitador Notas (seção pós-textual)
+    if (/^notas$/i.test(trimmed) || /^notas\s+sobre\b/i.test(trimmed)) {
+      return {
+        type: 'appendix',
+        title: trimmed,
+      };
+    }
+
+    // 7. Delimitador Agradecimentos / Conclusão / Epílogo
     const endRegex =
-      /^(?:conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix)\b(?:\s*[:.—-]?\s*(.*))?$/i;
+      /^(?:conclus[ãa]o|conclusion|ep[íi]logo|epilogue|agradecimentos|acknowledgements|acknowledgments)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const endMatch = trimmed.match(endRegex);
     if (endMatch) {
-      const isAppendix = /ap[êe]ndice|appendix/i.test(trimmed);
       return {
-        type: isAppendix ? 'appendix' : 'conclusion',
+        type: 'conclusion',
         title: trimmed,
       };
     }
@@ -742,9 +1066,25 @@ export class PdfExtractorService {
    * Identifica se uma página pertence a seções de Dedicatória / Agradecimentos
    */
   public isDedicationPage(pageText: string, pageNumber: number): boolean {
-    if (!pageText || pageNumber > 15) return false;
-    const firstLines = pageText.split('\n').slice(0, 4).join(' ').toLowerCase();
-    return /\b(dedicat[óo]ria|dedication|agradecimentos|acknowledgements|acknowledgments)\b/i.test(firstLines);
+    if (!pageText || pageNumber > 10) return false;
+    const trimmed = pageText.trim();
+    const firstLines = trimmed.split('\n').slice(0, 4).join(' ').toLowerCase();
+
+    if (/\b(dedicat[óo]ria|dedication|agradecimentos|acknowledgements|acknowledgments)\b/i.test(firstLines)) {
+      return true;
+    }
+
+    // Dedicações informais curtas antes do sumário: "Para Hanna", "Para meus pais", "To my wife", "À memória de...", etc.
+    if (trimmed.length <= 250 && trimmed.split(/\s+/).length <= 35) {
+      if (
+        /^(?:para\s+|to\s+|for\s+|dedico\s+|dedicado\s+|à\s+|ao\s+|aos\s+|in\s+memoriam\b)/i.test(trimmed) &&
+        !/^para\s+(?:que|isso|fazer|obter|alcançar|garantir|evitar)\b/i.test(trimmed)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -767,7 +1107,9 @@ export class PdfExtractorService {
    */
   public isChapterHeading(text: string): boolean {
     const firstLines = text.split('\n').slice(0, 4).join('\n');
-    return /^(?:cap[íi]tulo|chapter|li[çc][ãa]o|lesson|parte|part|ap[êe]ndice|appendix|conclus[ãa]o|conclusion|ep[íi]logo|epilogue)\b/im.test(firstLines);
+    return /^(?:cap[íi]tulo|capitulo|chapter|li[çc][ãa]o|lesson|parte|part|ap[êe]ndice|appendix|notas|agradecimentos|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|\d{1,2}\s*[.—-]\s+[A-ZÀ-Ú])\b/im.test(
+      firstLines
+    );
   }
 
   /**
@@ -775,14 +1117,24 @@ export class PdfExtractorService {
    */
   public parseTableOfContentsEntries(
     tocPages: Array<{ pageNumber: number; text: string }>
-  ): Array<{ title: string; pageNumber: number }> {
-    const entries: Array<{ title: string; pageNumber: number }> = [];
+  ): Array<{ title: string; chapterNumber?: number; targetPage?: number }> {
+    const entries: Array<{ title: string; chapterNumber?: number; targetPage?: number }> = [];
     const entryRegex =
-      /^(?:cap[íi]tulo\s*\d*[:.—-]?|chapter\s*\d*[:.—-]?|\d+[:.—-]?)\s*(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)\s*$/i;
+      /^(?:(?:cap[íi]tulo|chapter|\d+)\s*[:.—-]?\s*)?(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)\s*$/i;
 
     for (const page of tocPages) {
       const lines = page.text.split('\n').map((l) => l.trim()).filter(Boolean);
       for (const line of lines) {
+        const capNumMatch = line.match(/^(\d{1,2})\s*[.—-]\s*(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)/);
+        if (capNumMatch) {
+          entries.push({
+            chapterNumber: parseInt(capNumMatch[1], 10),
+            title: capNumMatch[2].replace(/\.+$/, '').trim(),
+            targetPage: parseInt(capNumMatch[3], 10),
+          });
+          continue;
+        }
+
         const match = line.match(entryRegex);
         if (match) {
           const rawTitle = match[1]?.trim() || line;
@@ -790,7 +1142,7 @@ export class PdfExtractorService {
           if (!isNaN(targetPage) && targetPage > 0) {
             entries.push({
               title: rawTitle.replace(/\.+$/, '').trim(),
-              pageNumber: targetPage,
+              targetPage,
             });
           }
         }
@@ -816,6 +1168,7 @@ export class PdfExtractorService {
       .trim();
 
     const inferredTitle = hints.titlePt?.trim() || cleanFileTitle || 'Novo Livro Digital';
+    const inferredSubtitle = hints.subtitlePt?.trim() || '';
     const inferredAuthor = hints.author?.trim() || 'Autor Desconhecido';
     const inferredYear = hints.originalYear || new Date().getFullYear();
     const inferredPublisher =
@@ -823,7 +1176,7 @@ export class PdfExtractorService {
 
     const nonEmptyPages = extracted.pages
       .map((text, idx) => ({ pageNumber: idx + 1, text: text.trim() }))
-      .filter((p) => p.text.length > 20);
+      .filter((p) => p.text.length > 5);
 
     if (nonEmptyPages.length === 0) {
       const placeholderChapter: Chapter = {
@@ -861,7 +1214,7 @@ export class PdfExtractorService {
       return {
         titlePt: inferredTitle,
         titleEn: inferredTitle,
-        subtitlePt: 'Edição Estruturada para Leitura e Estudo',
+        subtitlePt: inferredSubtitle || 'Edição Estruturada para Leitura e Estudo',
         subtitleEn: 'Structured Reading Edition',
         author: inferredAuthor,
         originalYear: inferredYear,
@@ -872,60 +1225,51 @@ export class PdfExtractorService {
       };
     }
 
-    // 1. Identificar páginas de Sumário / Índice (NUNCA incluir no texto de leitura)
-    const tocPages: Array<{ pageNumber: number; text: string }> = [];
-    const tocPageNumbers = new Set<number>();
+    // 1. Identificar bloco de Sumário / Índice (NUNCA incluir no texto de leitura dos capítulos)
+    const tocPageNumbers = this.identifyTableOfContentsPages(nonEmptyPages);
+    const tocPages = nonEmptyPages.filter((p) => tocPageNumbers.has(p.pageNumber));
+    const firstTocPage = tocPageNumbers.size > 0 ? Math.min(...tocPageNumbers) : Infinity;
+    const lastTocPage = tocPageNumbers.size > 0 ? Math.max(...tocPageNumbers) : 0;
 
-    for (const page of nonEmptyPages.slice(0, 15)) {
-      if (this.isTableOfContentsPage(page.text)) {
-        tocPages.push(page);
-        tocPageNumbers.add(page.pageNumber);
-      }
-    }
-
-    // 2. Identificar seções de Front Matter preliminares (Dedicatória)
+    // 2. Identificar seções de Front Matter preliminares (Dedicatória / Epígrafe)
     const dedicationPages: Array<{ pageNumber: number; text: string }> = [];
     const candidateBodyPages: Array<{ pageNumber: number; text: string }> = [];
 
+    let mainContentStarted = false;
     for (const page of nonEmptyPages) {
       // Se for página de Sumário / Índice, NUNCA incluir no texto de leitura dos capítulos!
       if (tocPageNumbers.has(page.pageNumber)) {
         continue;
       }
 
-      // Dedicatória e Agradecimentos nas páginas preliminares
-      if (page.pageNumber <= 15 && this.isDedicationPage(page.text, page.pageNumber)) {
+      // Se encontrar um delimitador de capítulo/prefácio/introdução, o conteúdo principal já começou
+      const firstLine = page.text.trim().split('\n')[0];
+      const secondLine = page.text.trim().split('\n')[1];
+      if (this.matchDelimiter(firstLine, secondLine)) {
+        mainContentStarted = true;
+      }
+
+      // Dedicatória nas páginas preliminares antes do sumário e antes de iniciar o conteúdo
+      if (!mainContentStarted && page.pageNumber < firstTocPage && page.pageNumber <= 10 && this.isDedicationPage(page.text, page.pageNumber)) {
         dedicationPages.push(page);
         continue;
       }
 
-      candidateBodyPages.push(page);
+      // O corpo do livro começa estritamente após o término do sumário
+      if (page.pageNumber > lastTocPage) {
+        candidateBodyPages.push(page);
+      }
     }
 
-    // Identifica primeira página onde inicia o conteúdo de leitura
-    const firstContentPage = Math.min(
-      ...dedicationPages.map((p) => p.pageNumber),
-      ...tocPages.map((p) => p.pageNumber),
-      ...candidateBodyPages
-        .filter((p) => this.isChapterHeading(p.text) || this.isAnyDelimiter(p.text.split('\n')[0]))
-        .map((p) => p.pageNumber),
-      Infinity
-    );
+    const bodyPages = candidateBodyPages;
 
-    // Páginas antes de firstContentPage são capa, folha de rosto ou ficha catalográfica
-    const bodyPages = candidateBodyPages.filter((p) => {
-      if (isFinite(firstContentPage) && p.pageNumber < firstContentPage) {
-        return false;
-      }
-      return true;
-    });
-
-    // 3. Segmentação estrita baseada em delimitadores (Capítulo e Prefácio)
+    // 3. Segmentação estrita baseada em delimitadores (Parte, Capítulo, Prefácio, etc.)
     interface SegmentedGroup {
       type: 'dedication' | 'preface' | 'intro' | 'chapter' | 'conclusion' | 'appendix';
       id: string;
       number: number;
       title: string;
+      partTitle?: string;
       startPage: number;
       endPage: number;
       paragraphs: string[];
@@ -947,7 +1291,8 @@ export class PdfExtractorService {
       });
     }
 
-    // Varre bodyPages linha a linha usando 'Prefácio' e 'Capítulo' como delimitadores rígidos
+    // Varre bodyPages linha a linha usando delimitadores estruturais
+    let currentPartTitle: string | null = null;
     let currentUnit: SegmentedGroup | null = null;
     let chapterCounter = 0;
 
@@ -973,6 +1318,12 @@ export class PdfExtractorService {
         const delimiter = this.matchDelimiter(line, nextLine);
 
         if (delimiter) {
+          if (delimiter.type === 'part') {
+            currentPartTitle = delimiter.title;
+            lineIdx += delimiter.consumedNextLine ? 2 : 1;
+            continue;
+          }
+
           // Fecha a unidade anterior se existente
           if (currentUnit) {
             units.push(currentUnit);
@@ -987,6 +1338,7 @@ export class PdfExtractorService {
               id: `chapter-${num}`,
               number: num,
               title: delimiter.title || `Capítulo ${num}`,
+              partTitle: currentPartTitle || undefined,
               startPage: pageNumber,
               endPage: pageNumber,
               paragraphs: [],
@@ -1007,6 +1359,7 @@ export class PdfExtractorService {
               id: 'intro',
               number: 0,
               title: delimiter.title || 'Introdução',
+              partTitle: currentPartTitle || undefined,
               startPage: pageNumber,
               endPage: pageNumber,
               paragraphs: [],
@@ -1057,6 +1410,7 @@ export class PdfExtractorService {
               id: 'intro',
               number: 0,
               title: 'Introdução',
+              partTitle: currentPartTitle || undefined,
               startPage: pageNumber,
               endPage: pageNumber,
               paragraphs: [],
@@ -1126,13 +1480,18 @@ export class PdfExtractorService {
           ? group.title
           : `Capítulo ${group.number}: ${group.title}`;
 
+      const subtitlePt =
+        group.partTitle ||
+        hints.subtitlePt ||
+        `Páginas ${group.startPage}–${group.endPage} do documento original`;
+
       return {
         id: group.id,
         number: group.number,
         titlePt,
         titleEn: group.title,
-        subtitlePt: `Páginas ${group.startPage}–${group.endPage} do documento original`,
-        subtitleEn: `Pages ${group.startPage}–${group.endPage}`,
+        subtitlePt,
+        subtitleEn: group.partTitle || `Pages ${group.startPage}–${group.endPage}`,
         pages:
           group.startPage === group.endPage
             ? `${group.startPage}`

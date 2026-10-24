@@ -206,14 +206,16 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               <BookOpen className="w-5 h-5" />
             </div>
             <div>
+              <a href='/'>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-xl font-bold font-sans tracking-tight text-current">
                   Lumi
                 </h1>
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FF7A00]/15 text-[#FF7A00] border border-[#FF7A00]/30">
-                  Librarial UI
+                  renovada.app.br
                 </span>
               </div>
+              </a>
               <p className={`text-xs ${mutedText}`}>
                 {user ? `Olá, ${user.name.split(' ')[0]}!` : 'Modo visitante • Leitura aberta'}
               </p>

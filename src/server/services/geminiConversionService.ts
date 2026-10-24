@@ -339,30 +339,55 @@ export class GeminiConversionService {
       pdfBase64 = pdfBuffer.toString('base64');
     }
 
-    // Sample text from beginning/middle/end of book for outline extraction
+    // Pre-identificação local da estrutura e sumário para guiar a IA
+    const localTocPages = this.extractor.identifyTableOfContentsPages(
+      extracted.pages.map((text, idx) => ({ pageNumber: idx + 1, text }))
+    );
+    const localBaselinePlanSummary = localBaseline.chapters
+      .map(
+        (c) =>
+          `- ${c.titlePt} [Páginas ${c.pages}] (tipo: ${
+            c.id === 'dedication'
+              ? 'dedication'
+              : c.id === 'preface'
+              ? 'preface'
+              : c.id === 'intro' || c.number === 0
+              ? 'intro'
+              : c.id.startsWith('appendix')
+              ? 'appendix'
+              : 'chapter'
+          })`
+      )
+      .join('\n');
+
+    // Amostragem distribuída das páginas para extração de outline:
+    // Primeiras 15 páginas (capa, ficha catalográfica, sumário) + amostras dos inícios de capítulos detectados
     const samplePagesText = extracted.pages
-      .slice(0, Math.min(25, extracted.pages.length))
+      .slice(0, Math.min(20, extracted.pages.length))
       .map((p, i) => `--- PÁGINA ${i + 1} ---\n${p.slice(0, 1500)}`)
       .join('\n\n');
 
     const outlinePrompt = `Você é um arquiteto especialista em conservação e estruturação editorial de livros em PDF.
-Analise as páginas extraídas deste livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor absoluto, reproduzindo com fidelidade a ordem e a organização do livro físico original:
+Analise este livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrutura com rigor absoluto, reproduzindo com fidelidade a ordem e a organização da obra original:
 
-1. REGRAS DE DELIMITADORES RÍGIDOS (PREFÁCIO E CAPÍTULO):
-   - DELIMITADOR PREFÁCIO: Quando existir a palavra 'Prefácio' (ou 'Preface', 'Prólogo'), use como delimitador estrito de texto preliminar antes do Capítulo 1 (type: "preface", number: 0). O prefácio inicia na ocorrência do delimitador e termina exatamente onde o Capítulo 1 começar.
-   - DELIMITADOR CAPÍTULO: Durante a conversão, valide expressamente se existe a expressão 'Capítulo' (ou 'Capitulo', 'Chapter', ex.: Capítulo 1, Capítulo 2, CAPÍTULO I...) para identificar onde começa e onde termina cada capítulo do livro. Cada ocorrência da expressão delimita com exatidão o início do novo capítulo e o término do capítulo anterior.
-   - Delimitador Introdução: Se existir antes dos capítulos uma seção explícita de Introdução, mapeie como type: "intro", number: 0.
+1. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
+   - Localize exatamente em quais páginas está o Sumário ou Índice do livro (o sumário pode ocupar várias páginas consecutivas, ex.: páginas 6 a 12).
+   - Preencha "tableOfContentsPages" com a lista completa de todas as páginas do Sumário (ex.: [6, 7, 8, 9, 10, 11, 12]).
+   - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como guia de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar estritamente APÓS o Sumário (ou após o prefácio/introdução).
 
-2. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
-   - Localize exatamente em quais páginas está o Sumário ou Índice do livro (geralmente entre as páginas 3 e 12).
-   - Preencha "tableOfContentsPages" com a lista de páginas do Sumário (ex.: [3, 4]).
-   - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como índice de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar APÓS o Sumário (ou após o prefácio/introdução).
+2. DELIMITADORES DE CAPÍTULO E SEÇÕES DO LIVRO:
+   - Capítulos com ou sem a palavra 'Capítulo': Os capítulos podem se iniciar com a expressão 'Capítulo X' OU com numeração direta no formato '1. [Título]', '1 - [Título]', '1 — [Título]', '2. [Título]' (muito comum em editoras de prestígio como Companhia das Letras, Martins Fontes, etc.).
+   - Prefácio: Se houver 'Prefácio' ou 'Prólogo', mapeie como type: "preface", number: 0.
+   - Introdução: Se existir antes dos capítulos uma seção explícita de Introdução, mapeie como type: "intro", number: 0.
+   - Partes: Se o livro for dividido em grandes 'Partes' (ex.: 'Parte 1 — Introdução', 'Parte 2 — Sentir e Conhecer'), capture a parte correspondente no subtítulo do capítulo.
+   - Pós-textuais: Se houver 'Apêndice', 'Notas' ou 'Agradecimentos' ao final, mapeie como type: "appendix" ou type: "conclusion".
 
-3. CAPÍTULOS PRINCIPAIS DO LIVRO (EXATIDÃO DA ESTRUTURA):
-   - Mapeie cada capítulo respeitando a divisão delimitada pela expressão 'Capítulo'.
-   - Para cada capítulo, determine com precisão a página onde ele realmente começa (startPage) e onde termina (endPage).
-   - Se houver Apêndices ou Conclusão ao final, adicione-os com type: "appendix" ou type: "conclusion".
-   - Assegure que nenhum capítulo comece antes do término do Sumário.
+3. ATENÇÃO À PAGINAÇÃO (PÁGINA DO PDF vs PÁGINA IMPRESSA NO SUMÁRIO):
+   - Os números de página indicados dentro do Sumário impresso (ex.: '1. Sair à luz ... 17') referem-se à diagramação física em papel e frequentemente NÃO correspondem aos números de página do PDF digital.
+   - 'startPage' e 'endPage' DEVEM ser os números reais (1-indexados) das páginas do arquivo PDF onde o capítulo de fato se inicia e termina.
+
+Estrutura preliminar já detectada no PDF como referência:
+${localBaselinePlanSummary || 'Nenhuma estrutura prévia.'}
 
 ${hints.titlePt ? `Título sugerido pelo usuário: "${hints.titlePt}"` : ''}
 ${hints.author ? `Autor sugerido pelo usuário: "${hints.author}"` : ''}
@@ -378,7 +403,7 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
       });
     }
     outlineInputs.push({
-      text: `${outlinePrompt}\n\nAmostra das páginas extraídas:\n${samplePagesText.slice(0, 30000)}`,
+      text: `${outlinePrompt}\n\nAmostra das primeiras páginas do PDF:\n${samplePagesText.slice(0, 30000)}`,
     });
 
     const outlineResponse = await client.models.generateContent({
@@ -391,9 +416,10 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
     });
 
     const outlineJson = JSON.parse(outlineResponse.text || '{}');
-    const tocPagesSet = new Set<number>(
-      Array.isArray(outlineJson.tableOfContentsPages) ? outlineJson.tableOfContentsPages : []
-    );
+    const outlineTocPages = Array.isArray(outlineJson.tableOfContentsPages)
+      ? outlineJson.tableOfContentsPages
+      : [];
+    const tocPagesSet = new Set<number>([...localTocPages, ...outlineTocPages]);
 
     const chapterPlan: Array<{
       number: number;
@@ -406,22 +432,29 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
     }> =
       Array.isArray(outlineJson.chapterPlan) && outlineJson.chapterPlan.length > 0
         ? outlineJson.chapterPlan
-        : localBaseline.chapters.map((c, idx) => ({
-            number: c.number || idx + 1,
-            type:
-              c.id === 'dedication'
-                ? 'dedication'
-                : c.id === 'preface'
-                ? 'preface'
-                : c.id === 'intro' || c.number === 0
-                ? 'intro'
-                : 'chapter',
-            titlePt: c.titlePt,
-            titleEn: c.titleEn,
-            subtitlePt: c.subtitlePt,
-            startPage: 1,
-            endPage: Math.max(1, extracted.totalPages),
-          }));
+        : localBaseline.chapters.map((c, idx) => {
+            const pageParts = (c.pages || '1').split('-');
+            const sPage = parseInt(pageParts[0], 10) || 1;
+            const ePage = parseInt(pageParts[1] || pageParts[0], 10) || sPage;
+            return {
+              number: c.number || idx + 1,
+              type:
+                c.id === 'dedication'
+                  ? 'dedication'
+                  : c.id === 'preface'
+                  ? 'preface'
+                  : c.id === 'intro' || c.number === 0
+                  ? 'intro'
+                  : c.id.startsWith('appendix')
+                  ? 'appendix'
+                  : 'chapter',
+              titlePt: c.titlePt,
+              titleEn: c.titleEn,
+              subtitlePt: c.subtitlePt,
+              startPage: sPage,
+              endPage: ePage,
+            };
+          });
 
     const chapters: Chapter[] = [];
     const totalCh = chapterPlan.length;
@@ -490,7 +523,7 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
         });
       }
       chapterInputs.push({
-        text: `${chapterPrompt}\n\nTexto das páginas ${plan.startPage} a ${plan.endPage}:\n${chapterPagesText.slice(0, 45000)}`,
+        text: `${chapterPrompt}\n\nTexto das páginas ${plan.startPage} a ${plan.endPage}:\n${chapterPagesText.slice(0, 250000)}`,
       });
 
       try {
@@ -721,39 +754,46 @@ Público-alvo: ${params.audience || 'Geral (Jovens e Adultos)'}`;
         subtitlePt: fallbackMetadata?.subtitlePt,
         author: fallbackMetadata?.author || 'Autor Desconhecido',
         originalYear: fallbackMetadata?.originalYear || new Date().getFullYear(),
-        publisher: fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        publisher: fallbackMetadata?.publisher || 'Edição Digital',
         synopsis: fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
-        category: fallbackMetadata?.category || 'Vida Cristã',
+        category: fallbackMetadata?.category || 'Geral',
         source: 'local',
       };
     }
 
     try {
-      const prompt = `Você é um editor literário experiente e bibliotecário digital.
-Analise a amostra de texto das primeiras páginas deste livro em PDF (capa, folha de rosto, ficha catalográfica e sumário) para identificar e traduzir com máxima fidelidade os metadados da obra para o Português do Brasil:
-- Título principal em Português
-- Título original (se houver)
-- Subtítulo (se houver)
-- Autor(es)
-- Ano original de publicação
-- Editora (publisher)
-- Sinopse (2 a 4 frases cativantes resumindo a mensagem central para o leitor cristão)
-- Categoria temática principal (escolha exatamente uma entre: Liderança, Células, Discipulado, Teologia, Biografias, Vida Cristã).
+      const prompt = `Você é um editor literário sênior e bibliotecário digital.
+Analise a amostra de texto das primeiras páginas deste livro em PDF (capa, folha de rosto, ficha catalográfica e sumário) para identificar com máxima fidelidade e precisão os metadados da obra em Português do Brasil:
+- Título principal em Português (atenção: não confunda o nome do autor com o título!)
+- Subtítulo da obra (se houver, comumente após dois pontos ou na linha seguinte ao título)
+- Título original (se for uma tradução, como indicado na ficha catalográfica / "Título original:")
+- Autor(es) (nome completo, ex: "Antônio Damásio", "Larry Stockstill")
+- Ano original de publicação ou copyright (ex: 2000, 1999)
+- Editora (publisher, ex: "Companhia das Letras", "Editora Vida", etc.)
+- Sinopse (2 a 4 frases cativantes e densas resumindo a mensagem central e propósito da obra)
+- Categoria temática principal (identifique a melhor categoria, ex: Neurociência & Psicologia, Filosofia, Teologia, Vida Cristã, Liderança, Discipulado, Células, Ciência, Biografia, Desenvolvimento Pessoal, Geral).
+
+Dados já extraídos localmente para referência:
+- Título preliminar: "${fallbackMetadata?.titlePt || ''}"
+- Subtítulo preliminar: "${fallbackMetadata?.subtitlePt || ''}"
+- Autor preliminar: "${fallbackMetadata?.author || ''}"
+- Editora preliminar: "${fallbackMetadata?.publisher || ''}"
+- Ano preliminar: "${fallbackMetadata?.originalYear || ''}"
 
 Amostra de texto das primeiras páginas:
-${pagesText.slice(0, 20000)}`;
+${pagesText.slice(0, 30000)}`;
 
       const METADATA_EXTRACTION_JSON_SCHEMA = {
         type: 'object',
         properties: {
-          titlePt: { type: 'string', description: 'Título em Português do Brasil.' },
+          titlePt: { type: 'string', description: 'Título principal da obra em Português do Brasil.' },
           titleEn: { type: 'string', description: 'Título original ou em inglês.' },
-          subtitlePt: { type: 'string', description: 'Subtítulo da obra em Português.' },
+          subtitlePt: { type: 'string', description: 'Subtítulo da obra em Português (se houver).' },
           author: { type: 'string', description: 'Nome completo do autor ou autores.' },
-          originalYear: { type: 'integer', description: 'Ano de publicação.' },
-          publisher: { type: 'string', description: 'Editora.' },
+          originalYear: { type: 'integer', description: 'Ano de publicação ou copyright.' },
+          publisher: { type: 'string', description: 'Editora responsável pela publicação.' },
           synopsis: { type: 'string', description: 'Sinopse editorial clara e cativante em Português.' },
-          category: { type: 'string', description: 'Categoria temática.' },
+          category: { type: 'string', description: 'Categoria temática da obra.' },
         },
         required: ['titlePt', 'author', 'originalYear', 'synopsis'],
       };
@@ -774,9 +814,9 @@ ${pagesText.slice(0, 20000)}`;
         subtitlePt: parsed.subtitlePt || fallbackMetadata?.subtitlePt,
         author: parsed.author || fallbackMetadata?.author || 'Autor Desconhecido',
         originalYear: Number(parsed.originalYear) || fallbackMetadata?.originalYear || new Date().getFullYear(),
-        publisher: parsed.publisher || fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        publisher: parsed.publisher || fallbackMetadata?.publisher || 'Edição Digital',
         synopsis: parsed.synopsis || fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
-        category: parsed.category || fallbackMetadata?.category || 'Vida Cristã',
+        category: parsed.category || fallbackMetadata?.category || 'Geral',
         source: 'gemini',
       };
     } catch (err: any) {
@@ -787,9 +827,9 @@ ${pagesText.slice(0, 20000)}`;
         subtitlePt: fallbackMetadata?.subtitlePt,
         author: fallbackMetadata?.author || 'Autor Desconhecido',
         originalYear: fallbackMetadata?.originalYear || new Date().getFullYear(),
-        publisher: fallbackMetadata?.publisher || 'Edição Digital — Biblioteca IPR Viamão',
+        publisher: fallbackMetadata?.publisher || 'Edição Digital',
         synopsis: fallbackMetadata?.synopsis || 'Obra selecionada para leitura e estudo.',
-        category: fallbackMetadata?.category || 'Vida Cristã',
+        category: fallbackMetadata?.category || 'Geral',
         source: 'local',
         error: err?.message,
       };

@@ -201,10 +201,11 @@ export function createBookRouter(
         (req.body.titlePt as string)?.trim() ||
         file.originalname.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() ||
         'Novo Livro';
+      const subtitlePt = (req.body.subtitlePt as string)?.trim() || '';
       const author = (req.body.author as string)?.trim() || 'Autor Desconhecido';
       const originalYear = Number(req.body.originalYear) || new Date().getFullYear();
       const publisher =
-        (req.body.publisher as string)?.trim() || 'Edição Digital — Biblioteca IPR Viamão';
+        (req.body.publisher as string)?.trim() || 'Edição Digital';
       const coverColor = (req.body.coverColor as string)?.trim() || 'amber';
       const customInstructions = (req.body.customInstructions as string)?.trim() || '';
       const apiKeyOverride = (req.body.apiKey as string)?.trim() || '';
@@ -221,8 +222,8 @@ export function createBookRouter(
         slug,
         titlePt: rawTitle,
         titleEn: rawTitle,
-        subtitlePt: 'Convertendo PDF para formato de leitura...',
-        subtitleEn: 'Converting PDF to structured reader format...',
+        subtitlePt: subtitlePt || 'Convertendo PDF para formato de leitura...',
+        subtitleEn: subtitlePt || 'Converting PDF to structured reader format...',
         author,
         originalYear,
         publisher,
@@ -266,6 +267,7 @@ export function createBookRouter(
         file.originalname,
         {
           titlePt: rawTitle,
+          subtitlePt: subtitlePt || undefined,
           author: author !== 'Autor Desconhecido' ? author : undefined,
           originalYear,
           publisher,
