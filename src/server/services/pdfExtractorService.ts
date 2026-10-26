@@ -766,13 +766,15 @@ export class PdfExtractorService {
     const tocPageNumbers = new Set<number>();
     let inTocBlock = false;
 
-    for (const page of pages.slice(0, 30)) {
+    for (const page of pages.slice(0, 35)) {
       const pageText = page.text.trim();
       if (!pageText) continue;
 
       const lines = pageText.split('\n').map((l) => l.trim()).filter(Boolean);
       const first5 = lines.slice(0, 5).join(' ').toLowerCase();
       const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
+
+      const dotLeaderMatches = (pageText.match(/(?:\.{2,}|\s{4,})\s*\d{1,4}/g) || []).length;
 
       let tocLineCount = 0;
       for (const line of lines) {
@@ -781,7 +783,7 @@ export class PdfExtractorService {
         }
       }
 
-      if (hasTocHeading && (tocLineCount >= 1 || lines.length <= 35)) {
+      if (hasTocHeading && (dotLeaderMatches >= 1 || tocLineCount >= 1 || lines.length <= 35)) {
         inTocBlock = true;
         tocPageNumbers.add(page.pageNumber);
         continue;
@@ -789,19 +791,13 @@ export class PdfExtractorService {
 
       if (inTocBlock) {
         // Continua o bloco de sumário se a página contiver entradas pontilhadas de índice
-        // e não for o início de um parágrafo narrativo longo de capítulo
-        const startsWithLongProse =
-          lines.length > 0 &&
-          lines[0].length > 70 &&
-          !this.isTocLine(lines[0]) &&
-          !this.isAnyDelimiter(lines[0]);
-
-        if (tocLineCount >= 2 && !startsWithLongProse) {
+        if (dotLeaderMatches >= 1 || tocLineCount >= 1) {
           tocPageNumbers.add(page.pageNumber);
         } else {
+          // Encerra o sumário ao encontrar uma página sem líderes de pontos e com conteúdo
           inTocBlock = false;
         }
-      } else if (tocLineCount >= 4) {
+      } else if (dotLeaderMatches >= 3 || tocLineCount >= 3) {
         inTocBlock = true;
         tocPageNumbers.add(page.pageNumber);
       }
@@ -849,7 +845,7 @@ export class PdfExtractorService {
    */
   public isAnyDelimiter(line: string): boolean {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.length > 130) return false;
+    if (!trimmed || trimmed.length > 80) return false;
     if (
       /^(?:cap[íi]tulo|capitulo|chapter|pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|introdu[çc][ãa]o|introduction|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix|notas|agradecimentos|parte\s+\d+|parte\s+[ivxlcdm]+)\b/i.test(
         trimmed
@@ -859,7 +855,16 @@ export class PdfExtractorService {
     }
     // Padrão de capítulo numerado direto sem a palavra "Capítulo": "1. Sair à luz" ou "4- O vago sinal"
     if (/^\d{1,2}\s*[.—-]\s+[A-ZÀ-Ú]/.test(trimmed)) {
-      return true;
+      const rest = trimmed.replace(/^\d{1,2}\s*[.—-]\s+/, '').trim();
+      if (
+        rest.length <= 60 &&
+        !/[,;:-]$/.test(rest) &&
+        !/^[,\s]/.test(rest) &&
+        !/\((?:Nova York|Oxford|op\. cit\.|Paris|Cambridge|Berkeley|São Paulo|Basic Books)/i.test(rest) &&
+        !/^(?:mesmo sendo|todas as|foram chamadas|várias dessas|comprometimentos da|todos os|o hipocampo|os cortices|os mapas|as mudanças|uma lesão|as regiões|essas mesmas|acionamento do|esta é uma|para um exemplo|a síndrome do|ver\s+[A-Z]|discuti esse|já descrevi)\b/i.test(rest)
+      ) {
+        return true;
+      }
     }
     return false;
   }
@@ -869,7 +874,12 @@ export class PdfExtractorService {
    */
   public matchDelimiter(
     line: string,
-    nextLine?: string
+    nextLine?: string,
+    context?: {
+      currentChapterNumber?: number;
+      inBackMatter?: boolean;
+      currentUnitType?: string;
+    }
   ): {
     type: 'preface' | 'intro' | 'chapter' | 'conclusion' | 'appendix' | 'part';
     number?: number;
@@ -877,7 +887,22 @@ export class PdfExtractorService {
     consumedNextLine?: boolean;
   } | null {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.length > 130) return null;
+    if (!trimmed) return null;
+    if (trimmed.length > 130 && !/^(?:notas|agradecimentos|ap[êe]ndice)\b/i.test(trimmed)) return null;
+
+    // Se já estivermos no pós-textual de Notas, não criamos novos capítulos ou apêndices
+    if (context?.currentUnitType === 'notes') {
+      const endMatch = trimmed.match(
+        /^(?:conclus[ãa]o|conclusion|ep[íi]logo|epilogue|agradecimentos|acknowledgements|acknowledgments|bibliografia|refer[êe]ncias)\b/i
+      );
+      if (endMatch) {
+        return {
+          type: 'conclusion',
+          title: 'Agradecimentos',
+        };
+      }
+      return null;
+    }
 
     // 0. Delimitador de Parte (PARTE 1, PARTE 2 – SENTIR E CONHECER)
     const partRegex = /^(?:parte\s+([0-9ivxlcdm]+))\b(?:\s*[—–-]\s*(.*))?$/i;
@@ -889,14 +914,14 @@ export class PdfExtractorService {
       let consumedNextLine = false;
 
       if (rest) {
-        title = `Parte ${partNum}: ${rest.replace(/^[:.—-\s]+/, '')}`;
+        title = `Parte ${partNum} — ${rest.replace(/^[:.—-\s]+/, '')}`;
       } else if (
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
         !this.isAnyDelimiter(nextLine)
       ) {
-        title = `Parte ${partNum}: ${nextLine.trim()}`;
+        title = `Parte ${partNum} — ${nextLine.trim()}`;
         consumedNextLine = true;
       }
 
@@ -907,7 +932,7 @@ export class PdfExtractorService {
       };
     }
 
-    // 1. Delimitador Prefácio (regra 3)
+    // 1. Delimitador Prefácio
     const prefaceRegex = /^(?:pref[áa]cio|prefacio|preface|pr[óo]logo|prologue)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const prefMatch = trimmed.match(prefaceRegex);
     if (prefMatch) {
@@ -935,54 +960,92 @@ export class PdfExtractorService {
       };
     }
 
-    // 2. Delimitador Capítulo explícito: 'Capítulo 1', 'Capítulo 1: O Vento'
-    const chapterRegex =
-      /^(?:cap[íi]tulo|capitulo|chapter)\b(?:\s*[:.—-]?\s*([a-z0-9à-ú]+))?(?:\s*[:.—-]?\s*(.*))?$/i;
-    const chapMatch = trimmed.match(chapterRegex);
-    if (chapMatch) {
-      const rawNum = chapMatch[1]?.trim();
-      const parsedNum = this.parseNumberToken(rawNum);
-      const rest = chapMatch[2]?.trim() || '';
-      let title = trimmed;
-      let consumedNextLine = false;
+    // 2. Delimitador Capítulo explícito: 'Capítulo 1', 'Capítulo 1: O Começo'
+    if (!context?.inBackMatter) {
+      const chapterRegex =
+        /^(?:cap[íi]tulo|capitulo|chapter)\b(?:\s*[:.—-]?\s*([a-z0-9à-ú]+))?(?:\s*[:.—-]?\s*(.*))?$/i;
+      const chapMatch = trimmed.match(chapterRegex);
+      if (chapMatch) {
+        const rawNum = chapMatch[1]?.trim();
+        const parsedNum = this.parseNumberToken(rawNum);
+        const rest = chapMatch[2]?.trim() || '';
 
-      if (parsedNum !== null && rest) {
-        title = `Capítulo ${parsedNum}: ${rest.replace(/^[:.—-\s]+/, '')}`;
-      } else if (
-        parsedNum !== null &&
-        !rest &&
-        nextLine &&
-        nextLine.trim().length > 2 &&
-        nextLine.trim().length < 80 &&
-        !this.isAnyDelimiter(nextLine)
-      ) {
-        title = `Capítulo ${parsedNum}: ${nextLine.trim()}`;
-        consumedNextLine = true;
-      } else if (parsedNum !== null && !rest) {
-        title = `Capítulo ${parsedNum}`;
+        // Se for menção adverbial no texto como 'capítulo 7, comprometimentos...' -> rejeita
+        const isCommaRef = /^,/.test(rest);
+        const isShort = rest.length <= 60;
+
+        let isSequential = true;
+        if (context?.currentChapterNumber !== undefined && parsedNum !== null) {
+          if (context.currentChapterNumber === 0) {
+            isSequential = parsedNum === 1;
+          } else {
+            isSequential = parsedNum === context.currentChapterNumber + 1;
+          }
+        }
+
+        if (isSequential && !isCommaRef && isShort) {
+          let title = trimmed;
+          let consumedNextLine = false;
+
+          if (parsedNum !== null && rest) {
+            title = `Capítulo ${parsedNum}: ${rest.replace(/^[:.—-\s]+/, '')}`;
+          } else if (
+            parsedNum !== null &&
+            !rest &&
+            nextLine &&
+            nextLine.trim().length > 2 &&
+            nextLine.trim().length < 80 &&
+            !this.isAnyDelimiter(nextLine)
+          ) {
+            title = `Capítulo ${parsedNum}: ${nextLine.trim()}`;
+            consumedNextLine = true;
+          } else if (parsedNum !== null && !rest) {
+            title = `Capítulo ${parsedNum}`;
+          }
+
+          return {
+            type: 'chapter',
+            number: parsedNum ?? undefined,
+            title,
+            consumedNextLine,
+          };
+        }
       }
-
-      return {
-        type: 'chapter',
-        number: parsedNum ?? undefined,
-        title,
-        consumedNextLine,
-      };
     }
 
     // 3. Delimitador Capítulo numerado direto: '1. Sair à luz', '4- O vago sinal', '10. Usando a consciência'
-    const numberedChapRegex = /^(\d{1,2})\s*[.—-]\s*([A-ZÀ-Ú].*)$/;
-    const numMatch = trimmed.match(numberedChapRegex);
-    if (numMatch) {
-      const num = parseInt(numMatch[1], 10);
-      const rest = numMatch[2].trim();
-      const title = `Capítulo ${num}: ${rest}`;
-      return {
-        type: 'chapter',
-        number: num,
-        title,
-        consumedNextLine: false,
-      };
+    if (!context?.inBackMatter) {
+      const numberedChapRegex = /^(\d{1,2})\s*[.—-]\s*([A-ZÀ-Ú].*)$/;
+      const numMatch = trimmed.match(numberedChapRegex);
+      if (numMatch) {
+        const num = parseInt(numMatch[1], 10);
+        const rest = numMatch[2].trim();
+
+        const isShort = rest.length <= 60;
+        const noTerminalPunctuation = !/[,;:-]$/.test(rest);
+        const noLeadingPunctuation = !/^[,\s]/.test(rest);
+        const noCitation = !/\((?:Nova York|Oxford|op\. cit\.|Paris|Cambridge|Berkeley|São Paulo|Basic Books)/i.test(rest);
+        const noNarrativePhrases = !/^(?:mesmo sendo|todas as|foram chamadas|várias dessas|comprometimentos da|todos os|o hipocampo|os cortices|os mapas|as mudanças|uma lesão|as regiões|essas mesmas|acionamento do|esta é uma|para um exemplo|a síndrome do|ver\s+[A-Z]|discuti esse|já descrevi|recentemente está|outros autores|a separação da)\b/i.test(rest);
+
+        let isSequential = true;
+        if (context?.currentChapterNumber !== undefined) {
+          if (context.currentChapterNumber === 0) {
+            isSequential = num === 1;
+          } else {
+            isSequential = num === context.currentChapterNumber + 1;
+          }
+        }
+
+        if (isShort && noTerminalPunctuation && noLeadingPunctuation && noCitation && noNarrativePhrases && isSequential) {
+          const title = `Capítulo ${num}: ${rest}`;
+          return {
+            type: 'chapter',
+            number: num,
+            title,
+            consumedNextLine: false,
+          };
+        }
+      }
     }
 
     // 4. Delimitador Introdução
@@ -1027,7 +1090,7 @@ export class PdfExtractorService {
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
-        !this.isAnyDelimiter(nextLine)
+        (!this.isAnyDelimiter(nextLine) || /^notas\s+sobre\b/i.test(nextLine.trim()))
       ) {
         title = `Apêndice: ${nextLine.trim()}`;
         consumedNextLine = true;
@@ -1041,10 +1104,10 @@ export class PdfExtractorService {
     }
 
     // 6. Delimitador Notas (seção pós-textual)
-    if (/^notas$/i.test(trimmed) || /^notas\s+sobre\b/i.test(trimmed)) {
+    if (/^notas\b/i.test(trimmed) && !/^notas\s+sobre\b/i.test(trimmed)) {
       return {
         type: 'appendix',
-        title: trimmed,
+        title: 'Notas',
       };
     }
 
@@ -1055,7 +1118,7 @@ export class PdfExtractorService {
     if (endMatch) {
       return {
         type: 'conclusion',
-        title: trimmed,
+        title: trimmed.length > 50 ? 'Agradecimentos' : trimmed,
       };
     }
 
@@ -1295,6 +1358,7 @@ export class PdfExtractorService {
     let currentPartTitle: string | null = null;
     let currentUnit: SegmentedGroup | null = null;
     let chapterCounter = 0;
+    let inBackMatter = false;
 
     for (const page of bodyPages) {
       const pageNumber = page.pageNumber;
@@ -1314,14 +1378,45 @@ export class PdfExtractorService {
           continue;
         }
 
-        const nextLine = lines[lineIdx + 1];
-        const delimiter = this.matchDelimiter(line, nextLine);
+        const nextLine = lines.slice(lineIdx + 1).find((l) => l.trim().length > 0);
+
+        // Se estivermos dentro da seção Notas, não saímos dela exceto para Conclusão / Agradecimentos
+        if (currentUnit?.id === 'notes') {
+          const endDelimiter = this.matchDelimiter(line, nextLine, {
+            inBackMatter: true,
+            currentUnitType: 'notes',
+          });
+          if (endDelimiter && endDelimiter.type === 'conclusion') {
+            units.push(currentUnit);
+            currentUnit = {
+              type: 'conclusion',
+              id: 'acknowledgments',
+              number: 0,
+              title: endDelimiter.title,
+              startPage: pageNumber,
+              endPage: pageNumber,
+              paragraphs: [],
+            };
+            lineIdx += endDelimiter.consumedNextLine ? 2 : 1;
+            continue;
+          }
+        }
+
+        const delimiter = this.matchDelimiter(line, nextLine, {
+          currentChapterNumber: chapterCounter,
+          inBackMatter,
+          currentUnitType: currentUnit?.id,
+        });
 
         if (delimiter) {
           if (delimiter.type === 'part') {
             currentPartTitle = delimiter.title;
             lineIdx += delimiter.consumedNextLine ? 2 : 1;
             continue;
+          }
+
+          if (delimiter.type === 'appendix' || delimiter.type === 'conclusion') {
+            inBackMatter = true;
           }
 
           // Fecha a unidade anterior se existente
@@ -1331,8 +1426,8 @@ export class PdfExtractorService {
           }
 
           if (delimiter.type === 'chapter') {
-            chapterCounter++;
-            const num = delimiter.number ?? chapterCounter;
+            const num = delimiter.number ?? (chapterCounter + 1);
+            chapterCounter = num;
             currentUnit = {
               type: 'chapter',
               id: `chapter-${num}`,
@@ -1366,10 +1461,15 @@ export class PdfExtractorService {
             };
           } else {
             const isApp = delimiter.type === 'appendix';
+            const unitId = isApp
+              ? delimiter.title.toLowerCase().startsWith('notas')
+                ? 'notes'
+                : 'appendix'
+              : 'conclusion';
             currentUnit = {
               type: delimiter.type,
-              id: isApp ? `appendix-${units.length + 1}` : 'conclusion',
-              number: units.length + 1,
+              id: unitId,
+              number: 0,
               title: delimiter.title,
               startPage: pageNumber,
               endPage: pageNumber,
@@ -1391,7 +1491,13 @@ export class PdfExtractorService {
             lineIdx++;
             break;
           }
-          if (this.matchDelimiter(nextL, lines[lineIdx + 1])) {
+          if (
+            this.matchDelimiter(nextL, lines[lineIdx + 1], {
+              currentChapterNumber: chapterCounter,
+              inBackMatter,
+              currentUnitType: currentUnit?.id,
+            })
+          ) {
             break;
           }
           if (/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(nextL)) {
@@ -1474,7 +1580,7 @@ export class PdfExtractorService {
         .filter((kp) => kp.length > 15);
 
       const titlePt =
-        group.number === 0
+        group.type !== 'chapter'
           ? group.title
           : group.title.toLowerCase().startsWith('cap')
           ? group.title

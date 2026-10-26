@@ -549,7 +549,7 @@ Meu primeiro agradecimento é para Seamus Heaney pela contribuição para o tít
     expect(allChaptersText).not.toContain('Agradecimentos .....................................................................457');
 
     // Validação de capítulos estruturados:
-    // Deve conter Dedicatória, Capítulos 1 a 4, Apêndice, Notas e Agradecimentos
+    // Deve conter Dedicatória, Introdução, Capítulos 1 a 4, Apêndice, Notas e Agradecimentos (9 unidades no total)
     const chapterTitles = structured.chapters.map((c) => c.titlePt);
     expect(chapterTitles.some((t) => t.includes('Dedicatória'))).toBe(true);
     expect(chapterTitles.some((t) => t.includes('Sair à luz'))).toBe(true);
@@ -559,6 +559,13 @@ Meu primeiro agradecimento é para Seamus Heaney pela contribuição para o tít
     expect(chapterTitles.some((t) => t.includes('Apêndice'))).toBe(true);
     expect(chapterTitles.some((t) => t.includes('Notas'))).toBe(true);
     expect(chapterTitles.some((t) => t.includes('Agradecimentos'))).toBe(true);
+
+    // Validação contra duplicação de capítulos e falsos positivos de listas numeradas internas:
+    expect(chapterTitles.some((t) => t.includes('Mesmo sendo verdade'))).toBe(false);
+    expect(chapterTitles.some((t) => t.includes('Todas as emoções usam'))).toBe(false);
+    expect(chapterTitles.some((t) => t.includes('Diversos tipos de células'))).toBe(false);
+    expect(chapterTitles.some((t) => t.includes('Capítulo 32: Apêndice'))).toBe(false);
+    expect(structured.chapters.length).toBe(9);
 
     // Capítulo 3 NÃO deve ser o sumário! Deve ser o conteúdo de "A consciência central"
     const ch3 = structured.chapters.find((c) => c.titlePt.includes('A consciência central'));
