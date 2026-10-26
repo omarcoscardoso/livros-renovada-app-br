@@ -79,23 +79,23 @@ function parseArgs(): CliArgs {
     } else if (arg === '--dir') {
       result.dir = args[++i];
     } else if (arg.startsWith('--dir=')) {
-      result.dir = arg.split('=')[1];
+      result.dir = arg.slice(6);
     } else if (arg === '--url') {
       result.url = args[++i];
     } else if (arg.startsWith('--url=')) {
-      result.url = arg.split('=')[1];
+      result.url = arg.slice(6);
     } else if (arg === '--key') {
       result.key = args[++i];
     } else if (arg.startsWith('--key=')) {
-      result.key = arg.split('=')[1];
+      result.key = arg.slice(6);
     } else if (arg === '--delay') {
       result.delayMs = parseInt(args[++i], 10) || 3000;
     } else if (arg.startsWith('--delay=')) {
-      result.delayMs = parseInt(arg.split('=')[1], 10) || 3000;
+      result.delayMs = parseInt(arg.slice(8), 10) || 3000;
     } else if (arg === '--limit') {
       result.limit = parseInt(args[++i], 10);
     } else if (arg.startsWith('--limit=')) {
-      result.limit = parseInt(arg.split('=')[1], 10);
+      result.limit = parseInt(arg.slice(8), 10);
     }
   }
 
@@ -504,3 +504,4 @@ main().catch((err) => {
   console.error('\n❌ Erro fatal durante a execução do script:', err);
   process.exit(1);
 });
+
