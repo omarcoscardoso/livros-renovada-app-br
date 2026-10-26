@@ -608,6 +608,16 @@ export class PdfExtractorService {
       }
     }
 
+    // Determina se o documento possui numeração de página no topo (em mais de 35% das páginas)
+    let topNumberPageCount = 0;
+    for (const page of pages) {
+      const firstLine = page.split('\n').map((l) => l.trim()).find(Boolean) || '';
+      if (/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(firstLine)) {
+        topNumberPageCount++;
+      }
+    }
+    const isTopPageNumberDoc = topNumberPageCount / Math.max(1, pages.length) > 0.35;
+
     return pages.map((page) => {
       let lines = page.split('\n');
 
@@ -618,6 +628,22 @@ export class PdfExtractorService {
           /^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(first) ||
           /^(?:p[aá]gina|page)\s+\d{1,4}\s*$/i.test(first);
         const isRunning = runningHeaders.has(first);
+
+        // Se for um número isolado, mas a próxima linha parece ser um título de capítulo
+        // (ex: "1\nPrimeiro século..."), NÃO devemos remover o número, pois é o cabeçalho do capítulo!
+        if (isIsolatedNum && !isRunning && !isTopPageNumberDoc && lines.length > 1) {
+          const next = lines.slice(1).find((l) => l.trim().length > 0)?.trim() || '';
+          const num = parseInt(first.replace(/\D/g, ''), 10);
+          const isNextTitle =
+            next.length >= 2 &&
+            next.length <= 80 &&
+            /^[A-ZÀ-Ú0-9]/.test(next) &&
+            !runningHeaders.has(next) &&
+            !/[.!?]$/.test(next);
+          if (!isNaN(num) && num >= 1 && num <= 150 && isNextTitle) {
+            break; // Preserva o número do capítulo!
+          }
+        }
 
         if (isIsolatedNum || isRunning) {
           lines.shift();
@@ -661,7 +687,8 @@ export class PdfExtractorService {
     // 2. Correção de anomalias conhecidas de OCR
     text = text
       .replace(/C™te\s*d[’']Ivoire/g, 'Côte d’Ivoire')
-      .replace(/C™te/g, 'Côte');
+      .replace(/C™te/g, 'Côte')
+      .replace(/(?<=\s|^)0\s+([a-zà-ú]+)/g, 'O $1');
 
     // 3. Normalização tipográfica (travessões e aspas)
     text = text
@@ -699,8 +726,29 @@ export class PdfExtractorService {
         const isHeadingLike = /^(?:cap[íi]tulo|chapter|parte|part|[A-ZÀ-Ú\s]{4,60}$)/i.test(line);
         const isAuthorOrMeta = /^(?:by|por|autor|author|copyright|editora|published by|publicado por|\(c\)|©)\b/i.test(line);
         const isTitleLine = line.length <= 50 && /^[A-ZÀ-Ú0-9\s:—-]+$/.test(line);
+        const isNumberedItem = /^\d{1,3}\s*[.—-]\s+[A-ZÀ-Ú0-9]/.test(line);
+        const isNumberedStandalone = /^\d{1,3}$/.test(line);
+        const isPrevToc = /(?:^|[\s\p{P}])(?:sumario|indice|contents|table of contents)(?:[\s\p{P}]|$)/iu.test(
+          joined.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        );
 
-        if (prevEndsWithPunct || isHeadingLike || isAuthorOrMeta || isTitleLine) {
+        // Se a linha anterior foi um número isolado, a linha atual é o título (quebra antes do título)
+        // Se a linha anterior foi o título após o número, quebra após o título (início do parágrafo)
+        const isPrevStandaloneNumber = i > 0 && /^\d{1,3}$/.test(lines[i - 1]);
+        const isPrevTitleAfterNumber = i > 1 && /^\d{1,3}$/.test(lines[i - 2]) && lines[i - 1].length <= 80;
+
+        const shouldBreak =
+          prevEndsWithPunct ||
+          isHeadingLike ||
+          isAuthorOrMeta ||
+          isTitleLine ||
+          isNumberedItem ||
+          isNumberedStandalone ||
+          isPrevStandaloneNumber ||
+          isPrevTitleAfterNumber ||
+          isPrevToc;
+
+        if (shouldBreak) {
           joined += '\n\n' + line;
         } else {
           joined += ' ' + line;
@@ -726,17 +774,23 @@ export class PdfExtractorService {
   public collapseSpacedLetters(text: string): string {
     if (!text) return text;
     return text
-      .split(/\s{2,}/)
-      .map((segment) =>
-        segment.replace(/\b([a-zA-ZÀ-ÿ])(?:\s+([a-zA-ZÀ-ÿ])){2,}\b/g, (match) => {
-          const chars = match.split(/\s+/);
-          if (chars.every((c) => c.length === 1)) {
-            return chars.join('');
-          }
-          return match;
-        })
+      .split('\n')
+      .map((line) =>
+        line
+          .split(/[ \t]{2,}/)
+          .map((segment) =>
+            segment.replace(/\b([a-zA-ZÀ-ÿ])(?:[ \t]+([a-zA-ZÀ-ÿ])){2,}\b/g, (match) => {
+              const chars = match.split(/[ \t]+/);
+              if (chars.every((c) => c.length === 1)) {
+                return chars.join('');
+              }
+              return match;
+            })
+          )
+          .join(' ')
+          .trim()
       )
-      .join(' ')
+      .join('\n')
       .trim();
   }
 
@@ -753,6 +807,16 @@ export class PdfExtractorService {
   }
 
   /**
+   * Identifica se uma página pertence à ficha catalográfica (CIP / Catalogação na fonte / Dados internacionais)
+   */
+  public isCatalogingPage(pageText: string): boolean {
+    if (!pageText) return false;
+    return /(?:CIP-Brasil|catalogação-na-fonte|catalogação na publicação|dados internacionais de catalogação|ficha catalográfica)\b/i.test(
+      pageText
+    );
+  }
+
+  /**
    * Divide o conteúdo de uma página de Sumário que compartilha espaço com o corpo do texto:
    * 1. tocText: as linhas que compõem as entradas do Sumário
    * 2. bodyText: as linhas posteriores que já pertencem ao texto do livro
@@ -764,7 +828,9 @@ export class PdfExtractorService {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const normLine = this.collapseSpacedLetters(line);
-      if (this.isTocLine(normLine) || /\b(sum[áa]rio|índice|indice|contents)\b/i.test(normLine)) {
+      const asciiLine = normLine.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const isTocHead = /(?:^|[\s\p{P}])(?:sumario|indice|contents|table of contents)(?:[\s\p{P}]|$)/iu.test(asciiLine);
+      if (this.isTocLine(normLine) || isTocHead) {
         lastTocLineIdx = i;
       }
     }
@@ -800,6 +866,10 @@ export class PdfExtractorService {
     if (/^(?:parte\s+\d+|parte\s+[ivxlcdm]+|cap[íi]tulo\s+\d+|\d+\s*[.—-]).*?\s+\d{1,4}$/i.test(trimmed)) {
       return true;
     }
+    // 3. Entrada de sumário numerada sem número de página: "1. Primeiro século da Era Cristã" ou "Capítulo 1"
+    if (/^(?:\d{1,2}\s*[.—-]\s+[A-ZÀ-Ú0-9]|cap[íi]tulo\s+\d+\b)/i.test(trimmed)) {
+      return true;
+    }
     return false;
   }
 
@@ -808,12 +878,14 @@ export class PdfExtractorService {
    */
   public isTableOfContentsPage(pageText: string): boolean {
     if (!pageText) return false;
+    if (this.isCatalogingPage(pageText)) return false;
     const normalizedText = this.collapseSpacedLetters(pageText);
     const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return false;
 
-    const first5 = lines.slice(0, 5).join(' ').toLowerCase();
-    const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
+    const first5 = lines.slice(0, 5).join(' ');
+    const asciiFirst5 = first5.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const hasTocHeading = /(?:^|[\s\p{P}])(?:sumario|indice|contents|table of contents|sumario geral|indice geral)(?:[\s\p{P}]|$)/iu.test(asciiFirst5);
 
     let tocLineCount = 0;
     for (const line of lines) {
@@ -822,7 +894,7 @@ export class PdfExtractorService {
       }
     }
 
-    if (hasTocHeading && (tocLineCount >= 1 || lines.length <= 30)) {
+    if (hasTocHeading && (tocLineCount >= 1 || lines.length <= 35)) {
       return true;
     }
 
@@ -841,11 +913,13 @@ export class PdfExtractorService {
     for (const page of pages.slice(0, 35)) {
       const pageText = page.text.trim();
       if (!pageText) continue;
+      if (this.isCatalogingPage(pageText)) continue;
 
       const normalizedText = this.collapseSpacedLetters(pageText);
       const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
-      const first5 = lines.slice(0, 5).join(' ').toLowerCase();
-      const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
+      const first5 = lines.slice(0, 5).join(' ');
+      const asciiFirst5 = first5.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const hasTocHeading = /(?:^|[\s\p{P}])(?:sumario|indice|contents|table of contents|sumario geral|indice geral)(?:[\s\p{P}]|$)/iu.test(asciiFirst5);
 
       const dotLeaderMatches = (pageText.match(/(?:\.{2,}|\s{4,})\s*\d{1,4}/g) || []).length;
 
@@ -967,6 +1041,9 @@ export class PdfExtractorService {
     const trimmed = this.collapseSpacedLetters(rawTrimmed);
     if (!trimmed) return null;
     if (trimmed.length > 130 && !/^(?:notas|agradecimentos|ap[êe]ndice)\b/i.test(trimmed)) return null;
+
+    // Rejeição estrita de linhas de ficha catalográfica (CIP) que contêm numeração
+    if (/\b(?:I+\.\s*Título|CDD\b|CDU\b|colab\.)/i.test(trimmed)) return null;
 
     // Se já estivermos no pós-textual de Notas, não criamos novos capítulos ou apêndices
     if (context?.currentUnitType === 'notes') {
@@ -1142,6 +1219,52 @@ export class PdfExtractorService {
       }
     }
 
+    // 3.5 Delimitador Capítulo por número isolado seguido de título na linha seguinte:
+    // Ex: line = "1", nextLine = "Primeiro século da Era cristã"
+    // Ou guiado pelo sumário: line = "1" e nextLine corresponde ao título do sumário daquele capítulo
+    if (!context?.inBackMatter) {
+      const standaloneNumMatch = trimmed.match(/^(\d{1,2})$/);
+      if (standaloneNumMatch && nextLine) {
+        const num = parseInt(standaloneNumMatch[1], 10);
+        const cleanNext = nextLine.trim();
+
+        let isSequential = true;
+        if (context?.currentChapterNumber !== undefined) {
+          if (context.currentChapterNumber === 0) {
+            isSequential = num === 1;
+          } else {
+            isSequential = num === context.currentChapterNumber + 1;
+          }
+        }
+
+        const matchingTocEntry = context?.tocEntries?.find((e: any) => {
+          if (e.isPart) return false;
+          if (e.chapterNumber === num) return true;
+          return this.normalizeTitleForComparison(e.title) === this.normalizeTitleForComparison(cleanNext);
+        });
+
+        const isNextLineTitle =
+          cleanNext.length >= 2 &&
+          cleanNext.length <= 80 &&
+          !/[.!?:;]$/.test(cleanNext) &&
+          !this.isAnyDelimiter(cleanNext) &&
+          (/^[A-ZÀ-Ú]/.test(cleanNext) || /^[0-9]/.test(cleanNext));
+
+        if ((matchingTocEntry || isSequential) && isNextLineTitle) {
+          const title = matchingTocEntry?.title
+            ? `Capítulo ${num} — ${formatTitleCase(matchingTocEntry.title)}`
+            : `Capítulo ${num} — ${formatTitleCase(cleanNext)}`;
+
+          return {
+            type: 'chapter',
+            number: num,
+            title,
+            consumedNextLine: true,
+          };
+        }
+      }
+    }
+
     // 4. Delimitador Introdução
     const introRegex = /^(?:introdu[çc][ãa]o|introduction)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const introMatch = trimmed.match(introRegex);
@@ -1250,7 +1373,7 @@ export class PdfExtractorService {
         const normEntry = this.normalizeTitleForComparison(entry.title);
         if (normEntry !== normLine) return false;
 
-        if (currentPage !== undefined && entry.targetPage) {
+        if (currentPage !== undefined && entry.targetPage !== undefined) {
           return Math.abs(currentPage - entry.targetPage) <= 6;
         }
         return true;
@@ -1360,14 +1483,14 @@ export class PdfExtractorService {
   }
 
   /**
-   * Tenta extrair itens de Sumário com seus respectivos números de página de destino
+   * Tenta extrair itens de Sumário com seus respectivos números de página de destino (ou pageless)
    */
   public parseTableOfContentsEntries(
     tocPages: Array<{ pageNumber: number; text: string }>
   ): Array<{
     title: string;
     chapterNumber?: number;
-    targetPage: number;
+    targetPage?: number;
     isPart?: boolean;
     isPrefaceOrIntro?: boolean;
     isConclusionOrEpilogue?: boolean;
@@ -1375,7 +1498,7 @@ export class PdfExtractorService {
     const entries: Array<{
       title: string;
       chapterNumber?: number;
-      targetPage: number;
+      targetPage?: number;
       isPart?: boolean;
       isPrefaceOrIntro?: boolean;
       isConclusionOrEpilogue?: boolean;
@@ -1387,6 +1510,7 @@ export class PdfExtractorService {
       const normalizedText = this.collapseSpacedLetters(page.text);
       const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
       for (const line of lines) {
+        // Formato com número de capítulo e página: "1. Título ... 12"
         const capNumMatch = line.match(/^(\d{1,2})\s*[.—-]\s*(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)/);
         if (capNumMatch) {
           const title = capNumMatch[2].replace(/\.+$/, '').trim();
@@ -1401,6 +1525,7 @@ export class PdfExtractorService {
           continue;
         }
 
+        // Formato genérico com página: "Título ... 12"
         const match = line.match(entryRegex);
         if (match) {
           const rawTitle = match[1]?.trim() || line;
@@ -1424,7 +1549,54 @@ export class PdfExtractorService {
               isPrefaceOrIntro,
               isConclusionOrEpilogue,
             });
+            continue;
           }
+        }
+
+        // Formato pageless numerado: "1. Primeiro século da Era Cristã"
+        const pagelessNumberedMatch = line.match(/^(\d{1,2})\s*[.—-]\s*([A-ZÀ-Ú0-9].*?)$/);
+        if (pagelessNumberedMatch) {
+          const chapterNumber = parseInt(pagelessNumberedMatch[1], 10);
+          const cleanTitle = pagelessNumberedMatch[2].replace(/\.+$/, '').trim();
+          entries.push({
+            chapterNumber,
+            title: cleanTitle,
+            targetPage: undefined,
+            isPart: /^parte\b/i.test(cleanTitle),
+            isPrefaceOrIntro: /^(?:pref[áa]cio|pr[óo]logo|introdu[çc][ãa]o|leia[, ]+por\s+favor)\b/i.test(cleanTitle),
+            isConclusionOrEpilogue: /^(?:conclus[ãa]o|ep[íi]logo|posf[áa]cio|ap[êe]ndice|notas|agradecimentos)\b/i.test(cleanTitle),
+          });
+          continue;
+        }
+
+        // Formato pageless explícito: "Capítulo 1 — O Começo"
+        const pagelessChapMatch = line.match(/^(?:cap[íi]tulo|chapter)\s+(\d+)\b(?:\s*[:.—-]\s*(.*))?$/i);
+        if (pagelessChapMatch) {
+          const chapterNumber = parseInt(pagelessChapMatch[1], 10);
+          const cleanTitle = pagelessChapMatch[2]?.replace(/\.+$/, '').trim() || `Capítulo ${chapterNumber}`;
+          entries.push({
+            chapterNumber,
+            title: cleanTitle,
+            targetPage: undefined,
+            isPart: false,
+            isPrefaceOrIntro: false,
+            isConclusionOrEpilogue: false,
+          });
+          continue;
+        }
+
+        // Formato pageless seções nomeadas: Prefácio, Introdução, Epílogo, etc.
+        const pagelessNamedMatch = line.match(/^(pref[áa]cio|pr[óo]logo|introdu[çc][ãa]o|conclus[ãa]o|ep[íi]logo|posf[áa]cio|ap[êe]ndice|notas|agradecimentos)\b(?:\s*[:.—-]\s*(.*))?$/i);
+        if (pagelessNamedMatch) {
+          const cleanTitle = line.trim();
+          entries.push({
+            title: cleanTitle,
+            targetPage: undefined,
+            isPart: false,
+            isPrefaceOrIntro: /^(?:pref|pró|intro)/i.test(cleanTitle),
+            isConclusionOrEpilogue: /^(?:conclu|epí|posf|apên|notas|agrad)/i.test(cleanTitle),
+          });
+          continue;
         }
       }
     }
@@ -1517,6 +1689,11 @@ export class PdfExtractorService {
 
     let mainContentStarted = false;
     for (const page of nonEmptyPages) {
+      // Se for página de ficha catalográfica (CIP), descarta do corpo e das preliminares de leitura
+      if (this.isCatalogingPage(page.text)) {
+        continue;
+      }
+
       // Se for página de Sumário / Índice, separa o sumário do conteúdo seguinte compartilhado na mesma página
       if (tocPageNumbers.has(page.pageNumber)) {
         const { tocText, bodyText } = this.splitTocPageContent(page.text);
@@ -1593,12 +1770,6 @@ export class PdfExtractorService {
       while (lineIdx < lines.length) {
         const line = lines[lineIdx];
         if (!line) {
-          lineIdx++;
-          continue;
-        }
-
-        // Ignora números de páginas isolados
-        if (/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(line)) {
           lineIdx++;
           continue;
         }
@@ -1713,7 +1884,23 @@ export class PdfExtractorService {
               };
             }
 
-            lineIdx += delimiter.consumedNextLine ? 2 : 1;
+            if (delimiter.consumedNextLine) {
+              while (lineIdx < lines.length && lines[lineIdx].trim() !== nextLine?.trim()) {
+                lineIdx++;
+              }
+              if (lineIdx < lines.length) {
+                lineIdx++;
+              }
+              continue;
+            } else {
+              lineIdx++;
+              continue;
+            }
+          }
+
+          // Ignora números de páginas isolados (que não atuaram como delimitadores de capítulo)
+          if (/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(line)) {
+            lineIdx++;
             continue;
           }
         }
@@ -1728,8 +1915,9 @@ export class PdfExtractorService {
             lineIdx++;
             break;
           }
+          const nextNextL = lines.slice(lineIdx + 1).find((l) => l.trim().length > 0);
           if (currentUnit?.id === 'notes') {
-            const endDelim = this.matchDelimiter(nextL, lines[lineIdx + 1], {
+            const endDelim = this.matchDelimiter(nextL, nextNextL, {
               inBackMatter: true,
               currentUnitType: 'notes',
               tocEntries,
@@ -1739,7 +1927,7 @@ export class PdfExtractorService {
               break;
             }
           } else if (
-            this.matchDelimiter(nextL, lines[lineIdx + 1], {
+            this.matchDelimiter(nextL, nextNextL, {
               currentChapterNumber: chapterCounter,
               inBackMatter,
               currentUnitType: currentUnit?.id,

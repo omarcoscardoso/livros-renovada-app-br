@@ -7,7 +7,7 @@ import {
   DEFAULT_BOOK_ID,
   SqliteBookRepository,
 } from '../src/server/repositories/bookRepository';
-import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
+import { PdfExtractorService, ExtractedPdfData } from '../src/server/services/pdfExtractorService';
 import {
   InMemoryStorageService,
   DEFAULT_GCS_BUCKET,
@@ -686,6 +686,196 @@ O juiz se levantou e proferiu a sentença final.`, // 112: Epílogo
     const leiaText = structured.chapters[0].sections.flatMap((s) => s.paragraphsPt).join(' ');
     expect(leiaText).toContain('A campainha tocou. Atendi.');
     expect(leiaText).not.toContain('MINHA CASA.....................................................................................................5');
+  });
+
+  it('deve extrair livros com índice sem números de página e capítulos por número isolado (ex: História do Cristianismo)', async () => {
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+
+    const historiaPages = [
+      '', // 1: Capa
+      `ANTES DE LER
+Estes e-books são disponibilizados gratuitamente com finalidade de leitura edificante.`, // 2: Antes de ler
+      `A. Knight & W. Anglin
+HISTÓRIA DO
+Cristianismo
+Dos apóstolos do Senhor Jesus ao século XX`, // 3: Folha de rosto
+      `Todos os Direitos Reservados. Copyright 1984.
+CIP-Brasil. Catalogação-na-fonte Sindicato Nacional dos Editores de Livros, RJ.
+Knight, A. E.
+K77h História do cristianismo / A. E. Knight [e] W. Anglin. – 2ª ed.
+1. História eclesiástica I. Anglin, W., colab. II. Título
+CDD — 270`, // 4: Ficha catalográfica (CIP)
+      `Índice
+1. Primeiro século da Era Cristã
+2. Segundo século da Era Cristã
+3. Quinta e sexta perseguições gerais
+4. Sétima e oitava perseguições gerais
+5. Nona e décima perseguições gerais
+6. Quarto século da Era Cristã
+7. Período semelhante a Pérgamo
+8. Período semelhante a Tiatira
+9. Nestorianos, paulícios e maometanos
+10. Idolatria romana e o poder papal
+11. Período mais tenebroso da Idade Média
+12. Depois do ano do terror
+13. Primeira cruzada
+14. Da segunda à quarta cruzada
+15. Da quinta à oitava cruzada
+16. Perseguição na Europa e a Inquisição
+17. Influência papal sobre a Reforma
+18. O princípio da Reforma
+19. Os reformadores antes da Reforma
+20. Lutero e a reforma alemã
+21. Zwínglio e a reforma suíça
+22. Zelo de Lutero na Reforma
+23. 0 formalismo depois da Reforma
+24. Período semelhante a Sardo
+25. Reforma na França e Suíça francesa
+26. Reforma na Itália e outros países europeus
+27. Reforma inglesa, no reinado de Henrique VIII
+28. Auxílios e obstáculos à reforma inglesa
+29. Reforma nos reinados de Eduardo VI, Maria e Isabel
+30. História da Igreja desde a Reforma`, // 5: Índice sem números de página
+      `1
+Primeiro século da Era cristã
+A história da Igreja de Deus tem sido sempre, desde a era apostólica até o presente, a história da graça divina.`, // 6: Cap 1
+      `2
+Segundo século da Era cristã
+Havia apenas dezoito meses que Domiciano tinha morrido, quando a igreja começou a sofrer.`, // 7: Cap 2
+      `3
+Quinta e sexta perseguições gerais
+A grande coragem que notamos em Policarpo não se encontrava somente nele.`, // 8: Cap 3
+      `4
+Sétima e oitava perseguições gerais
+Ao contemplarmos a decadência do império romano, há muita coisa solene.`, // 9: Cap 4
+      `5
+Nono e décima perseguições gerais
+Depois dum descanso de uns vinte e oito anos, tornou a mão do homem a estender-se.`, // 10: Cap 5
+      `6
+Quarto século da Era cristã
+Constantino, o Grande, subiu ao império em Roma.`, // 11: Cap 6
+      `7
+Período semelhante a Pérgamo
+O imperador Graciano recusou o título de pontífice máximo.`, // 12: Cap 7
+      `8
+Período semelhante a Tiatira
+Com o sexto século começa um novo período da história.`, // 13: Cap 8
+      `9
+Nestorianos, paulícios e maometanos
+No Oriente surgiram os ensinos de Maomé.`, // 14: Cap 9
+      `10
+Idolatria romana e o poder papal
+Enquanto os sarracenos conquistavam a Ásia, o papado crescia.`, // 15: Cap 10
+      `11
+Período mais tenebroso do Idade Médio
+Não podemos deixar de sentir uma certa tristeza ao pensarmos num período tão tenebroso.`, // 16: Cap 11
+      `12
+Depois do ano do terror
+Passado o ano mil, novas esperanças surgiram na Europa.`, // 17: Cap 12
+      `13
+Primeira cruzada
+O papa Urbano II convocou o concílio de Clermont.`, // 18: Cap 13
+      `14
+Do segunda à quarta cruzada
+As memórias a respeito do século XII são marcadas pelas expedições à Terra Santa.`, // 19: Cap 14
+      `15
+Da quinta à oitava cruzada
+Novos esforços foram empreendidos no Oriente Médio.`, // 20: Cap 15
+      `16
+Perseguição na Europa e a Inquisição
+Tribunais foram estabelecidos pela cúria romana para extirpar a heresia.`, // 21: Cap 16
+      `17
+Influência papal sobre a Reforma
+A corrupção crescente clamava por mudanças profundas.`, // 22: Cap 17
+      `18
+O princípio da Reforma
+As sementes da verdade divina começaram a germinar.`, // 23: Cap 18
+      `19
+Os reformadores antes da Reforma
+Wycliffe, Huss e Jerônimo foram precursores valorosos.`, // 24: Cap 19
+      `20
+Lutero e a reforma alemã
+As 95 teses foram afixadas na porta da igreja de Wittenberg.`, // 25: Cap 20
+      `21
+Zwínglio e a reforma suíça
+Na Suíça, Ulrico Zwínglio proclamava as verdades do Evangelho.`, // 26: Cap 21
+      `22
+Zelo de Lutero na Reforma
+A tradução da Bíblia para o alemão transformou a nação.`, // 27: Cap 22
+      `23
+O formalismo depois da Reforma
+A política e as disputas teológicas trouxeram desafios à fé.`, // 28: Cap 23
+      `24
+Período semelhante o Sardo
+O testemunho evangélico continuava no meio de provas.`, // 29: Cap 24
+      `25
+Reforma na França e Suíça francesa
+João Calvino estruturou a teologia reformada em Genebra.`, // 30: Cap 25
+      `26
+Reforma na Itália e outros países europeus
+Pequenos focos de renovação bíblica se acenderam pela Europa.`, // 31: Cap 26
+      `27
+Reforma inglesa, no reinado de Henrique VIII
+O rompimento com o papa abriu caminho para a Reforma na Inglaterra.`, // 32: Cap 27
+      `28
+Auxílios e obstáculos à reformo ingleso
+Tomás Cranmer e outros homens de fé influenciaram os rumos do país.`, // 33: Cap 28
+      `29
+Reformo nos reinados de Eduardo VI,
+Maria e Isabel
+Eduardo VI favoreceu a fé evangélica com grande piedade.`, // 34: Cap 29
+      `30
+História da Igreja desde a Reforma
+Até o século XX a graça do Senhor conduziu o Seu povo fiel.`, // 35: Cap 30
+    ];
+
+    const extractedData: ExtractedPdfData = {
+      totalPages: historiaPages.length,
+      pages: historiaPages.map((p) => extractor.cleanExtractedText(p)),
+      fullText: historiaPages.join('\n\n'),
+    };
+
+    // 1. Testa detecção e parsing do sumário pageless
+    const tocPages = extractor.identifyTableOfContentsPages(
+      extractedData.pages.map((t, i) => ({ pageNumber: i + 1, text: t })).filter((p) => p.text.length > 5)
+    );
+    expect(tocPages.has(5)).toBe(true);
+
+    const tocEntries = extractor.parseTableOfContentsEntries([
+      { pageNumber: 5, text: extractedData.pages[4] },
+    ]);
+    expect(tocEntries.length).toBe(30);
+    expect(tocEntries[0].title).toBe('Primeiro século da Era Cristã');
+    expect(tocEntries[0].chapterNumber).toBe(1);
+    expect(tocEntries[22].title).toBe('O formalismo depois da Reforma');
+    expect(tocEntries[29].title).toBe('História da Igreja desde a Reforma');
+    expect(tocEntries[29].chapterNumber).toBe(30);
+
+    // 2. Testa estruturação completa do livro
+    const structured = extractor.buildStructuredBookFromPages(
+      extractedData,
+      'Historia_do_Cristianismo.pdf'
+    );
+
+    expect(structured.titlePt).toContain('Cristianismo');
+    expect(structured.chapters.length).toBe(30);
+
+    // Valida que a ficha catalográfica (página 4) NÃO virou capítulo
+    for (const c of structured.chapters) {
+      expect(c.titlePt).not.toContain('História eclesiástica I.');
+    }
+
+    // Valida todos os 30 capítulos
+    expect(structured.chapters[0].number).toBe(1);
+    expect(structured.chapters[0].titlePt).toContain('Primeiro Século da Era Cristã');
+    expect(structured.chapters[4].number).toBe(5);
+    expect(structured.chapters[4].titlePt).toContain('Nona e Décima Perseguições Gerais');
+    expect(structured.chapters[10].number).toBe(11);
+    expect(structured.chapters[10].titlePt).toContain('Período Mais Tenebroso da Idade Média');
+    expect(structured.chapters[22].number).toBe(23);
+    expect(structured.chapters[22].titlePt).toContain('O Formalismo Depois da Reforma');
+    expect(structured.chapters[29].number).toBe(30);
+    expect(structured.chapters[29].titlePt).toContain('História da Igreja Desde a Reforma');
   });
 
   it('deve verificar integridade, recuperar banco corrompido automaticamente e gerar snapshots seguros via VACUUM INTO', () => {
