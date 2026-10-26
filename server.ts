@@ -37,7 +37,8 @@ const PORT = Number(process.env.PORT) || 3000;
 export function createApiApp(
   customRepo?: IBookRepository,
   customStorage?: IStorageService,
-  customUserRepo?: IUserRepository
+  customUserRepo?: IUserRepository,
+  customConversionService?: GeminiConversionService
 ) {
   const storageService = customStorage || getStorageService();
   const repo = customRepo || new SqliteBookRepository(undefined, storageService);
@@ -47,7 +48,7 @@ export function createApiApp(
   const authMiddleware = createAuthMiddleware(userRepo, repo);
 
   const extractor = new PdfExtractorService(storageService);
-  const conversionService = new GeminiConversionService(repo, extractor);
+  const conversionService = customConversionService || new GeminiConversionService(repo, extractor);
 
   const app = express();
   app.use(express.json({ limit: '25mb' }));
@@ -139,7 +140,14 @@ async function startServer() {
   const storageService = getStorageService();
   await storageService.restoreDatabaseSnapshot(DEFAULT_DB_PATH);
 
-  const app = createApiApp(undefined, storageService);
+  const repo = new SqliteBookRepository(undefined, storageService);
+  const extractor = new PdfExtractorService(storageService);
+  const conversionService = new GeminiConversionService(repo, extractor);
+
+  const app = createApiApp(repo, storageService, undefined, conversionService);
+
+  // Retoma automaticamente quaisquer livros que tenham sido interrompidos por reinício/deploy do servidor
+  void conversionService.resumePendingConversions(storageService);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');

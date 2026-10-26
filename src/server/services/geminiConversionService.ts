@@ -7,6 +7,7 @@ import {
   ExtractedPdfData,
   PdfExtractorService,
 } from './pdfExtractorService';
+import { IStorageService } from './storageService';
 
 const BOOK_OUTLINE_JSON_SCHEMA = {
   type: 'object',
@@ -186,12 +187,141 @@ export class GeminiConversionService {
     return fs.readFile(input);
   }
 
+  private conversionQueue: Array<{
+    bookId: string;
+    pdfInput: string | Buffer | Uint8Array;
+    originalFilename: string;
+    hints: BookMetadataHints;
+    customInstructions?: string;
+    overrideApiKey?: string;
+  }> = [];
+  private isProcessingQueue = false;
+
   /**
-   * Processes an uploaded PDF into the full BookInfo + Chapter[] reading format.
-   * Accepts either a file path or a Buffer/Uint8Array.
-   * Updates progress in SQLite at each step.
+   * Enfileira um livro para conversão sequencial controlada,
+   * evitando estouro de memória (OOM) e congelamento de CPU quando múltiplos livros são importados.
    */
   public async processUploadedBook(
+    bookId: string,
+    pdfInput: string | Buffer | Uint8Array,
+    originalFilename: string,
+    hints: BookMetadataHints = {},
+    customInstructions?: string,
+    overrideApiKey?: string
+  ): Promise<void> {
+    // Evita duplicatas na fila
+    if (this.conversionQueue.some((item) => item.bookId === bookId)) {
+      return;
+    }
+
+    this.conversionQueue.push({
+      bookId,
+      pdfInput,
+      originalFilename,
+      hints,
+      customInstructions,
+      overrideApiKey,
+    });
+
+    if (this.conversionQueue.length > 1) {
+      const position = this.conversionQueue.length;
+      this.repo.updateBookConversionStatus(
+        bookId,
+        'processing',
+        `Aguardando na fila de conversão (posição ${position})...`,
+        5
+      );
+    }
+
+    void this.drainQueue();
+  }
+
+  private async drainQueue(): Promise<void> {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.conversionQueue.length > 0) {
+        const item = this.conversionQueue.shift();
+        if (!item) break;
+
+        await this.executeBookConversion(
+          item.bookId,
+          item.pdfInput,
+          item.originalFilename,
+          item.hints,
+          item.customInstructions,
+          item.overrideApiKey
+        );
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * Varre o banco em busca de livros com status 'processing' interrompidos por reinício/deploy do servidor
+   * e enfileira novamente caso o arquivo PDF exista no storage.
+   */
+  public async resumePendingConversions(storageService: IStorageService): Promise<void> {
+    try {
+      const books = this.repo.listBooks();
+      const pendingBooks = books.filter((b) => b.status === 'processing');
+
+      if (pendingBooks.length === 0) return;
+
+      console.log(`[Queue] Encontrados ${pendingBooks.length} livro(s) com conversão pendente.`);
+
+      for (const book of pendingBooks) {
+        const pdfMeta = this.repo.getPdfMetadata(book.id);
+        if (!pdfMeta?.filename) {
+          this.repo.updateBookConversionStatus(
+            book.id,
+            'error',
+            'Arquivo PDF não encontrado.',
+            0,
+            'Arquivo PDF original não registrado.'
+          );
+          continue;
+        }
+
+        const pdfBuffer = await storageService.getPdfBuffer(pdfMeta.filename);
+        if (!pdfBuffer) {
+          console.warn(`[Queue] PDF do livro "${book.titlePt}" (${pdfMeta.filename}) não encontrado no storage.`);
+          this.repo.updateBookConversionStatus(
+            book.id,
+            'error',
+            'PDF não encontrado no storage.',
+            0,
+            'Arquivo PDF não pôde ser recuperado do storage.'
+          );
+          continue;
+        }
+
+        console.log(`[Queue] Retomando conversão do livro: "${book.titlePt}" (${book.id})`);
+        void this.processUploadedBook(
+          book.id,
+          pdfBuffer,
+          pdfMeta.downloadName,
+          {
+            titlePt: book.titlePt,
+            subtitlePt: book.subtitlePt,
+            author: book.author,
+            originalYear: book.originalYear,
+            publisher: book.publisher,
+            coverColor: book.coverColor,
+          }
+        );
+      }
+    } catch (err) {
+      console.error('[Queue] Erro ao retomar conversões pendentes:', err);
+    }
+  }
+
+  /**
+   * Executa a extração e estruturação do livro PDF.
+   */
+  private async executeBookConversion(
     bookId: string,
     pdfInput: string | Buffer | Uint8Array,
     originalFilename: string,
@@ -408,7 +538,7 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
     });
 
     const outlineResponse = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: outlineInputs,
       config: {
         responseMimeType: 'application/json',
@@ -538,7 +668,7 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
 
       try {
         const chResponse = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: chapterInputs,
           config: {
             responseMimeType: 'application/json',
@@ -677,7 +807,7 @@ Pergunta/Solicitação do leitor:
 ${params.prompt}`;
 
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
@@ -721,7 +851,7 @@ ${params.chapterSummary ? `Resumo do capítulo: ${params.chapterSummary}\n` : ''
 Público-alvo: ${params.audience || 'Geral (Jovens e Adultos)'}`;
 
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
@@ -809,7 +939,7 @@ ${pagesText.slice(0, 30000)}`;
       };
 
       const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',

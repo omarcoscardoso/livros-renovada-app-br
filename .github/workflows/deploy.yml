@@ -51,7 +51,8 @@ jobs:
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
           flags: |
             --cpu=1
-            --memory=1Gi
+            --memory=2Gi
+            --no-cpu-throttling
             --concurrency=80
             --timeout=300
             --allow-unauthenticated
