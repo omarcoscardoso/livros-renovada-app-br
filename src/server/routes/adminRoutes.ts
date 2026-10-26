@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { IUserRepository } from '../repositories/userRepository';
 import { IBookRepository } from '../repositories/bookRepository';
 import { GeminiConversionService } from '../services/geminiConversionService';
@@ -128,6 +129,69 @@ export function createAdminRouter(
       });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao salvar chave.' });
+    }
+  });
+
+  // Get Admin API Key status and value for automation scripts
+  router.get('/admin-key', (_req: AuthenticatedRequest, res) => {
+    try {
+      const configuredKey =
+        process.env.ADMIN_API_KEY?.trim() ||
+        bookRepo.getSetting('admin_api_key')?.trim() ||
+        null;
+      const isConfigured = Boolean(configuredKey && configuredKey.length >= 16);
+      const maskedKey =
+        isConfigured && configuredKey
+          ? `${configuredKey.slice(0, 4)}••••••••${configuredKey.slice(-4)}`
+          : null;
+
+      return res.json({
+        isConfigured,
+        maskedKey,
+        apiKey: configuredKey,
+        isFromEnv: Boolean(process.env.ADMIN_API_KEY?.trim()),
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error?.message || 'Erro ao consultar chave de administração.',
+      });
+    }
+  });
+
+  // Set / Regenerate Admin API Key for automation scripts
+  router.post('/admin-key', (req: AuthenticatedRequest, res) => {
+    try {
+      if (process.env.ADMIN_API_KEY?.trim()) {
+        return res.status(400).json({
+          error:
+            'A chave de administração foi configurada por variável de ambiente (ADMIN_API_KEY) e não pode ser sobrescrita pelo painel.',
+        });
+      }
+
+      const { adminKey, generate } = req.body || {};
+      let finalKey = '';
+
+      if (generate || !adminKey) {
+        finalKey = `lumi_${crypto.randomBytes(24).toString('hex')}`;
+      } else if (typeof adminKey === 'string' && adminKey.trim().length >= 16) {
+        finalKey = adminKey.trim();
+      } else {
+        return res.status(400).json({
+          error: 'A chave de administração deve conter no mínimo 16 caracteres.',
+        });
+      }
+
+      bookRepo.setSetting('admin_api_key', finalKey);
+
+      return res.json({
+        success: true,
+        apiKey: finalKey,
+        maskedKey: `${finalKey.slice(0, 4)}••••••••${finalKey.slice(-4)}`,
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error?.message || 'Erro ao salvar chave de administração.',
+      });
     }
   });
 

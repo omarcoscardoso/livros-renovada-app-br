@@ -9,6 +9,7 @@ import { createAdminRouter } from '../src/server/routes/adminRoutes';
 import { GeminiConversionService } from '../src/server/services/geminiConversionService';
 import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
 import { InMemoryStorageService } from '../src/server/services/storageService';
+import { createAuthMiddleware } from '../src/server/middleware/authMiddleware';
 
 describe('Segurança, Autenticação Google e Administração', () => {
   let tempDbPath: string;
@@ -205,5 +206,88 @@ describe('Segurança, Autenticação Google e Administração', () => {
     );
     expect(hasReprocess1).toBe(true);
     expect(hasReprocess2).toBe(true);
+
+    const hasAdminKeyGet = routes.some(
+      (r: any) => r.path === '/admin-key' && r.methods.includes('get')
+    );
+    const hasAdminKeyPost = routes.some(
+      (r: any) => r.path === '/admin-key' && r.methods.includes('post')
+    );
+    expect(hasAdminKeyGet).toBe(true);
+    expect(hasAdminKeyPost).toBe(true);
+  });
+
+  it('deve semear e gerenciar a chave de API de administração (admin_api_key) para scripts de automação', () => {
+    const db = getDatabase(tempDbPath);
+    const bookRepo = new SqliteBookRepository(db);
+    bookRepo.seedDefaultBookIfNeeded();
+
+    const seededKey = bookRepo.getSetting('admin_api_key');
+    expect(seededKey).toBeDefined();
+    expect(seededKey).not.toBeNull();
+    expect(typeof seededKey).toBe('string');
+    expect(seededKey!.startsWith('lumi_')).toBe(true);
+    expect(seededKey!.length).toBeGreaterThanOrEqual(32);
+
+    const auth = createAuthMiddleware(userRepo, bookRepo);
+
+    // 1. Requisição com cabeçalho X-Admin-Api-Key válido
+    let nextCalled = false;
+    const mockReqValid: any = {
+      headers: { 'x-admin-api-key': seededKey },
+      cookies: {},
+    };
+    const mockRes: any = {
+      status: (code: number) => ({
+        json: (data: any) => ({ statusCode: code, data }),
+      }),
+    };
+
+    auth.attachUser(mockReqValid, mockRes, () => {
+      nextCalled = true;
+    });
+
+    expect(nextCalled).toBe(true);
+    expect(mockReqValid.user).toBeDefined();
+    expect(mockReqValid.user?.role).toBe('admin');
+    expect(mockReqValid.user?.id).toBe('admin_api_service');
+
+    // 2. Requisição com Bearer token usando a chave admin
+    let bearerNextCalled = false;
+    const mockReqBearer: any = {
+      headers: { authorization: `Bearer ${seededKey}` },
+      cookies: {},
+    };
+    auth.attachUser(mockReqBearer, mockRes, () => {
+      bearerNextCalled = true;
+    });
+    expect(bearerNextCalled).toBe(true);
+    expect(mockReqBearer.user?.role).toBe('admin');
+
+    // 3. Requisição com chave inválida deve ser rejeitada em requireAuth / requireAdmin
+    let invalidNextCalled = false;
+    let authErrorResponse: any = null;
+    const mockReqInvalid: any = {
+      headers: { 'x-admin-api-key': 'chave_invalida_com_tamanho_errado' },
+      cookies: {},
+    };
+    const mockResInvalid: any = {
+      status: (code: number) => ({
+        json: (data: any) => {
+          authErrorResponse = { code, data };
+          return authErrorResponse;
+        },
+      }),
+    };
+
+    auth.attachUser(mockReqInvalid, mockResInvalid, () => {
+      invalidNextCalled = true;
+    });
+    expect(invalidNextCalled).toBe(true);
+    expect(mockReqInvalid.user).toBeUndefined();
+
+    auth.requireAdmin(mockReqInvalid, mockResInvalid, () => {});
+    expect(authErrorResponse).not.toBeNull();
+    expect(authErrorResponse.code).toBe(401);
   });
 });

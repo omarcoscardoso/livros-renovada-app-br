@@ -44,7 +44,7 @@ export function createApiApp(
   repo.seedDefaultBookIfNeeded();
 
   const userRepo = customUserRepo || new SqliteUserRepository(undefined, storageService);
-  const authMiddleware = createAuthMiddleware(userRepo);
+  const authMiddleware = createAuthMiddleware(userRepo, repo);
 
   const extractor = new PdfExtractorService(storageService);
   const conversionService = new GeminiConversionService(repo, extractor);

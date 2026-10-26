@@ -21,6 +21,8 @@ import {
   Filter,
   ArrowLeft,
   Award,
+  Copy,
+  Terminal,
 } from 'lucide-react';
 import { BookSummary } from '../data/bookTypes';
 import { ReaderTheme } from './Navbar';
@@ -98,6 +100,21 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
   const [savingKey, setSavingKey] = useState<boolean>(false);
   const [keyFeedback, setKeyFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Admin API key state for mass import & scripts
+  const [adminKeyStatus, setAdminKeyStatus] = useState<{
+    isConfigured: boolean;
+    maskedKey: string | null;
+    apiKey: string | null;
+    isFromEnv: boolean;
+  }>({
+    isConfigured: false,
+    maskedKey: null,
+    apiKey: null,
+    isFromEnv: false,
+  });
+  const [copiedAdminKey, setCopiedAdminKey] = useState(false);
+  const [generatingAdminKey, setGeneratingAdminKey] = useState(false);
+
   const isDark = theme === 'dark';
   const isSepia = theme === 'sepia';
 
@@ -136,10 +153,11 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
   const fetchUsersAndStats = useCallback(async () => {
     setLoadingUsers(true);
     try {
-      const [usersRes, statsRes, keyRes] = await Promise.all([
+      const [usersRes, statsRes, keyRes, adminKeyRes] = await Promise.all([
         fetch('/api/admin/users'),
         fetch('/api/admin/stats'),
         fetch('/api/admin/api-key'),
+        fetch('/api/admin/admin-key'),
       ]);
 
       if (usersRes.ok) {
@@ -155,6 +173,15 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
         setApiKeyStatus({
           isConfigured: kData.isConfigured,
           maskedKey: kData.maskedKey,
+        });
+      }
+      if (adminKeyRes.ok) {
+        const akData = await adminKeyRes.json();
+        setAdminKeyStatus({
+          isConfigured: akData.isConfigured,
+          maskedKey: akData.maskedKey,
+          apiKey: akData.apiKey || null,
+          isFromEnv: akData.isFromEnv || false,
         });
       }
     } catch (err) {
@@ -315,6 +342,46 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
       setKeyFeedback({ type: 'error', message: 'Erro de conexão com o servidor.' });
     } finally {
       setSavingKey(false);
+    }
+  };
+
+  const handleCopyAdminKey = () => {
+    if (!adminKeyStatus.apiKey) return;
+    navigator.clipboard.writeText(adminKeyStatus.apiKey);
+    setCopiedAdminKey(true);
+    setTimeout(() => setCopiedAdminKey(false), 2500);
+  };
+
+  const handleRegenerateAdminKey = async () => {
+    if (
+      !window.confirm(
+        'Deseja gerar uma nova Chave de API de Administração? Scripts que utilizavam a chave anterior precisarão ser atualizados.'
+      )
+    ) {
+      return;
+    }
+    setGeneratingAdminKey(true);
+    try {
+      const res = await fetch('/api/admin/admin-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generate: true }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminKeyStatus((prev) => ({
+          ...prev,
+          isConfigured: true,
+          maskedKey: data.maskedKey,
+          apiKey: data.apiKey,
+        }));
+      } else {
+        alert(data.error || 'Erro ao gerar nova chave de administração.');
+      }
+    } catch {
+      alert('Erro de conexão ao regerar chave.');
+    } finally {
+      setGeneratingAdminKey(false);
     }
   };
 
@@ -1017,6 +1084,89 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
                 <span>Salvar Nova Chave</span>
               </button>
             </form>
+
+            {/* Divisor */}
+            <hr className={isDark ? 'border-slate-800' : isSepia ? 'border-[#E3DAC7]' : 'border-slate-200'} />
+
+            {/* Chave de API de Administração */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-[#5C6BC0]" />
+                  <h3 className="text-base sm:text-lg font-bold font-editorial">
+                    Chave de Administração (Scripts & Ingestão em Lote)
+                  </h3>
+                </div>
+                <p className={`text-xs ${mutedText} mt-1`}>
+                  Utilize esta chave para autenticar scripts de importação em massa (ex: Calibre e Google Drive) via cabeçalho{' '}
+                  <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">X-Admin-Api-Key</code> sem requerer login interativo do Google.
+                </p>
+              </div>
+
+              <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${subCardBg}`}>
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      adminKeyStatus.isConfigured
+                        ? 'bg-indigo-500/15 text-indigo-500 border border-indigo-500/30'
+                        : 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                    }`}
+                  >
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold flex items-center gap-2">
+                      Status: {adminKeyStatus.isConfigured ? 'Chave Ativa' : 'Pendente'}
+                      {adminKeyStatus.isFromEnv && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                          Variável de Ambiente
+                        </span>
+                      )}
+                    </p>
+                    <p className={`text-[11px] font-mono select-all ${mutedText}`}>
+                      {adminKeyStatus.apiKey || adminKeyStatus.maskedKey || 'Nenhuma chave ativa'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                  {adminKeyStatus.apiKey && (
+                    <button
+                      type="button"
+                      onClick={handleCopyAdminKey}
+                      className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-[#5C6BC0]/15 hover:bg-[#5C6BC0]/25 text-[#5C6BC0] text-xs font-bold border border-[#5C6BC0]/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedAdminKey ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedAdminKey ? 'Copiada!' : 'Copiar Chave'}</span>
+                    </button>
+                  )}
+                  {!adminKeyStatus.isFromEnv && (
+                    <button
+                      type="button"
+                      onClick={handleRegenerateAdminKey}
+                      disabled={generatingAdminKey}
+                      className={`flex-1 sm:flex-initial px-3.5 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isDark
+                          ? 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                          : isSepia
+                          ? 'border-[#D8C7A7] hover:bg-[#EAE0CB] text-[#2C2217]'
+                          : 'border-slate-300 hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {generatingAdminKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span>Regerar</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className={`p-4 rounded-2xl border text-xs space-y-2 ${subCardBg}`}>
+                <p className="font-semibold text-[11px]">Exemplo de execução do script:</p>
+                <pre className="p-3 rounded-xl bg-black/80 text-emerald-400 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all">
+                  npm run import:books -- --dir /caminho/calibre --key {adminKeyStatus.apiKey || adminKeyStatus.maskedKey || 'SUA_CHAVE_ADMIN'}
+                </pre>
+              </div>
+            </div>
           </div>
         )}
       </main>

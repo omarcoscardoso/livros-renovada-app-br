@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { BookSummary, Chapter, StoredBook, BookStatus } from '../../data/bookTypes';
 import { bookInfo, allChapters } from '../../data/bookData';
 import {
@@ -84,6 +85,11 @@ export class SqliteBookRepository implements IBookRepository {
   }
 
   public seedDefaultBookIfNeeded(): void {
+    if (!this.getSetting('admin_api_key')) {
+      const defaultKey = `lumi_${crypto.randomBytes(24).toString('hex')}`;
+      this.setSetting('admin_api_key', defaultKey);
+    }
+
     if (this.getSetting('default_book_deleted') === 'true') {
       // User explicitly deleted the default book, do not re-seed it
       return;
