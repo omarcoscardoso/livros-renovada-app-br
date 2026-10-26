@@ -878,6 +878,97 @@ Até o século XX a graça do Senhor conduziu o Seu povo fiel.`, // 35: Cap 30
     expect(structured.chapters[29].titlePt).toContain('História da Igreja Desde a Reforma');
   });
 
+  it('deve normalizar faux-bold (double-strike glyphs) preservando números reais e numerais romanos', () => {
+    const extractor = new PdfExtractorService();
+
+    // Normalização básica de double-strike
+    expect(extractor.collapseFauxBold('OO iinnccêênnddiioo ddee RRoommaa')).toBe('O incêndio de Roma');
+    expect(extractor.collapseFauxBold('6644')).toBe('64');
+    expect(extractor.collapseFauxBold('CC.. 115500')).toBe('C. 150');
+
+    // Preserva números reais de 2 dígitos e numerais romanos em linhas comuns
+    expect(extractor.collapseFauxBold('Página 22 do volume II')).toBe('Página 22 do volume II');
+    expect(extractor.collapseFauxBold('Concílio Vaticano II')).toBe('Concílio Vaticano II');
+    expect(extractor.collapseFauxBold('Papa Urbano II')).toBe('Papa Urbano II');
+  });
+
+  it('deve extrair e estruturar livros com sumário por ano/evento e faux-bold (ex: Os 100 Acontecimentos)', async () => {
+    const extractor = new PdfExtractorService(new InMemoryStorageService());
+
+    const mockPages = [
+      '', // 1: Capa
+      `Os 100 Acontecimentos mais importantes da história do Cristianismo
+Do incêndio de Roma ao crescimento da igreja na China
+A. Kenneth Curtis J. Stephen Lang Randy Petersen`, // 2: Folha de rosto
+      `Dados Internacionais de Catalogação na Publicação (CIP)
+(Câmara Brasileira do Livro, SP, Brasil)
+Curtis, A. Kenneth-
+Os 100 acontecimentos mais importantes da história do cristianismo: do incêndio de Roma ao
+crescimento da igreja na China / A. Kenneth Curtis, J. Stephen Lang e Randy Petersen ; tradução
+Emirson Justino — São Paulo: Editora Vida, 2003.
+ISBN 85-7367-738-4
+1. Cristianismo 2. Igreja — História 3. Igreja — História — Cronologia 4. Vida cristã`, // 3: Ficha CIP
+      `Prefácio Quais as dez coisas mais importantes que aconteceram na sua vida nos últimos cinco anos?
+Precisamos admitir que ninguém tem a palavra final sobre as datas mais importantes na história do cristianismo.`, // 4: Prefácio
+      `Sumário
+O incêndio de Roma 6
+Tito destrói Jerusalém 7
+O Concílio de Nicéia 8
+Início do Concílio Vaticano II 9
+Fonte das Ilustrações 10
+Índice Remissivo 11`, // 5: Sumário com espaço simples e páginas
+      `64
+O incêndio de Roma
+Em julho do ano 64, um terrível incêndio consumiu grande parte da cidade de Roma.`, // 6: Capítulo 1 com cabeçalho de ano
+      `70
+Tito destrói Jerusalém
+As legiões romanas comandadas pelo general Tito cercaram a cidade santa.`, // 7: Capítulo 2 com cabeçalho de ano
+      `325
+O Concílio de Nicéia
+Constantino convocou os bispos para resolver a questão ariana.
+O Concílio de Nicéia`, // 8: Capítulo 3 com rodapé duplicado que deve ser deduplicado
+      `1962
+Início do Concílio Vaticano II
+O papa João XXIII surpreendeu o mundo ao convocar o vigésimo primeiro concílio ecumênico.`, // 9: Capítulo 4 com ano
+      `Fonte das Ilustrações
+Créditos das fotos e pinturas utilizadas nesta edição.`, // 10: Apêndice
+      `Índice Remissivo
+Acontecimentos, nomes e locais citados nesta obra.` // 11: Apêndice
+    ];
+
+    const pdfData: ExtractedPdfData = {
+      totalPages: mockPages.length,
+      pages: mockPages,
+      fullText: mockPages.join('\n\n'),
+    };
+
+    const structured = extractor.buildStructuredBookFromPages(
+      pdfData,
+      'Os_100_Acontecimentos.pdf'
+    );
+
+    // Valida títulos e metadados
+    expect(structured.chapters.length).toBe(7); // Prefácio + 4 Capítulos + 2 Apêndices
+    expect(structured.chapters[0].id).toBe('preface');
+    expect(structured.chapters[0].titlePt).toContain('Prefácio');
+
+    // Capítulos 1 a 4
+    expect(structured.chapters[1].number).toBe(1);
+    expect(structured.chapters[1].titlePt).toContain('O Incêndio de Roma');
+    expect(structured.chapters[2].number).toBe(2);
+    expect(structured.chapters[2].titlePt).toContain('Tito Destrói Jerusalém');
+    expect(structured.chapters[3].number).toBe(3);
+    expect(structured.chapters[3].titlePt).toContain('O Concílio de Nicéia');
+    expect(structured.chapters[4].number).toBe(4);
+    expect(structured.chapters[4].titlePt).toContain('Início do Concílio Vaticano Ii');
+
+    // Apêndices pós-textuais
+    expect(structured.chapters[5].id).toBe('appendix');
+    expect(structured.chapters[5].titlePt).toBe('Fonte das Ilustrações');
+    expect(structured.chapters[6].id).toBe('appendix');
+    expect(structured.chapters[6].titlePt).toBe('Índice Remissivo');
+  });
+
   it('deve verificar integridade, recuperar banco corrompido automaticamente e gerar snapshots seguros via VACUUM INTO', () => {
     // 1. Testa criação de snapshot seguro via VACUUM INTO
     const snapshotPath = path.join(
