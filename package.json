@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "import:books": "tsx scripts/import-calibre-books.ts"
+    "import:books": "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt tsx scripts/import-calibre-books.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^8.4.0",

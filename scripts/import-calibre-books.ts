@@ -29,6 +29,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Carregar certificados CA do sistema se existirem e não estiverem configurados
+if (!process.env.NODE_EXTRA_CA_CERTS && fs.existsSync('/etc/ssl/certs/ca-certificates.crt')) {
+  process.env.NODE_EXTRA_CA_CERTS = '/etc/ssl/certs/ca-certificates.crt';
+}
+
 interface CliArgs {
   dir?: string;
   url: string;
@@ -38,6 +43,7 @@ interface CliArgs {
   delayMs: number;
   limit?: number;
   help: boolean;
+  insecure: boolean;
 }
 
 interface ParsedBookMeta {
@@ -65,6 +71,7 @@ function parseArgs(): CliArgs {
     force: false,
     delayMs: 3000,
     help: false,
+    insecure: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -76,6 +83,8 @@ function parseArgs(): CliArgs {
       result.dryRun = true;
     } else if (arg === '--force') {
       result.force = true;
+    } else if (arg === '--insecure' || arg === '-k') {
+      result.insecure = true;
     } else if (arg === '--dir') {
       result.dir = args[++i];
     } else if (arg.startsWith('--dir=')) {
@@ -106,6 +115,10 @@ function parseArgs(): CliArgs {
 
   // Remove trailing slash from URL
   result.url = result.url.replace(/\/+$/, '');
+
+  if (result.insecure) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
 
   return result;
 }
@@ -148,6 +161,7 @@ PARÂMETROS:
   --url <url>           URL do servidor Lumi (Padrão: https://lumi.renovada.app.br)
   --dry-run             Modo de simulação: apenas analisa metadados e checa duplicidades
   --force               Força o envio mesmo se já existir livro cadastrado com mesmo título
+  --insecure, -k        Ignora validações de certificados SSL (útil para redes corporativas)
   --delay <ms>          Pausa entre uploads em milissegundos (Padrão: 3000ms)
   --limit <num>         Quantidade máxima de livros a importar nesta execução
   --help, -h            Exibe esta ajuda
@@ -243,6 +257,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function formatError(err: any): string {
+  if (!err) return 'Erro desconhecido';
+  let msg = err.message || String(err);
+  if (err.cause) {
+    const cause = err.cause;
+    const causeMsg = cause.message || cause.code || (typeof cause === 'object' ? JSON.stringify(cause) : String(cause));
+    msg += ` (Detalhe: ${causeMsg})`;
+  }
+  return msg;
+}
+
 async function main() {
   const args = parseArgs();
 
@@ -299,7 +324,15 @@ async function main() {
     }
     console.log(`✅ Conexão bem-sucedida! Livros já cadastrados na plataforma: ${existingBooksMap.size}\n`);
   } catch (err: any) {
-    console.error(`❌ Falha ao conectar ao servidor ${args.url}: ${err?.message || err}`);
+    const errorDetails = formatError(err);
+    console.error(`❌ Falha ao conectar ao servidor ${args.url}: ${errorDetails}`);
+    console.error(`\n💡 Sugestões de Resolução:`);
+    console.error(`   1. Certificados Corporativos / Proxy SSL:`);
+    console.error(`      Execute com a flag --insecure para ignorar validações de SSL corporativo:`);
+    console.error(`      npm run import:books -- --dir "..." --key "..." --insecure --dry-run`);
+    console.error(`   2. Se estiver em ambiente sem acesso direto à internet, você pode rodar o servidor localmente:`);
+    console.error(`      npm run dev`);
+    console.error(`      e usar: --url http://localhost:3000\n`);
     process.exit(1);
   }
 
@@ -480,7 +513,8 @@ async function main() {
       }
     } catch (err: any) {
       countFailed++;
-      console.error(`       ❌ Falha ao enviar "${book.title}": ${err?.message || err}\n`);
+      const detail = formatError(err);
+      console.error(`       ❌ Falha ao enviar "${book.title}": ${detail}\n`);
     }
   }
 
