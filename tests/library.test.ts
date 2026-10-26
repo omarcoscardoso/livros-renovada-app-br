@@ -580,4 +580,106 @@ Meu primeiro agradecimento é para Seamus Heaney pela contribuição para o tít
     expect(html).toContain('É compreensível que nós, cientistas, lastimemos o fato');
     expect(html).not.toContain('PARTE 1 — INTRODUÇÃO ................................................15');
   });
+
+  it('deve extrair e estruturar perfeitamente livros com espaçamento entre letras (kerning), partes nomeadas e sumário híbrido (ex.: "O Estudante" - Adelaide Carraro)', async () => {
+    const extractor = new PdfExtractorService();
+
+    // Simulação exata da estrutura de "O Estudante":
+    // - Sumário com kerning ('S u m á r i o') compartilhado na página 2 com o início de 'LEIA, POR FAVOR'
+    // - Partes nomeadas ('PARTE AZUL', 'PARTE NEGRA')
+    // - Títulos de capítulos com letras espaçadas ('C a p í t u l o 1', ..., 'C a p í t u l o 8')
+    // - Epílogo na página 112 com frase narrativa imediatamente seguinte sem quebrar o título
+    const mockPages = [
+      'O Estudante\nAdelaide Carraro\nEditora Global', // 1: Capa / Folha de rosto
+      `S u m á r i o
+LEIA, POR FAVOR ...........................................................................................2
+PARTE AZUL ..........................................................................4
+O ESTUDANTE.................................................................................................4
+MINHA CASA.....................................................................................................5
+A PRIMEIRA PROFESSORA..........................................................................9
+VIAGEM............................................................................................................21
+O PRESO .........................................................................................................30
+A CRIANÇA......................................................................................................42
+PARTE NEGRA.....................................................................47
+O COLÉGIO.....................................................................................................47
+MEU MESTRE.................................................................................................61
+O TRAFICANTE ..............................................................................................76
+EPÍLOGO .......................................................................................................112
+LEIA, POR FAVOR
+A campainha tocou. Atendi.
+O menino ricamente vestido disse:
+- Adelaide Carraro?
+- Sim.`, // 2: Sumário híbrido com início do texto de "LEIA, POR FAVOR"
+      'Então vamos conversar lá dentro.\nRoberto, você não está só.', // 3
+      'PARTE AZUL\nO ESTUDANTE\nMeu nome é Roberto. Tenho quinze anos.', // 4: Parte Azul + O Estudante
+      'Sabe por que eu digo isso?\nC a p í t u l o 1\nMINHA CASA\nNasci numa linda casa térrea.', // 5: Cap 1
+      'E era o dia inteiro brincando no quintal.', // 6-8
+      'Mestra, Mestra....\nC a p í t u l o 2\nA PRIMEIRA PROFESSORA\nE foi por isso que aprendi a amar os estudos.', // 9: Cap 2
+      'Então ele vai chegar...\nC a p í t u l o 3\nVIAGEM\nViajamos pelo exterior durante as férias.', // 21: Cap 3
+      'Na hora do jantar...\nC a p í t u l o 4\nO PRESO\nNa terceira série conhecemos a dura realidade.', // 30: Cap 4
+      'turma para ver...\nC a p í t u l o 5\nA CRIANÇA\nNaquela ocasião compreendemos a inocência.', // 42: Cap 5
+      'PARTE NEGRA\nC a p í t u l o 6\nO COLÉGIO\nNaquele dia acordei assustado com o barulho.', // 47: Parte Negra + Cap 6
+      'No meio da tarde...\nC a p í t u l o 7\nMEU MESTRE\nEle nos ensinava com paciência e dedicação.', // 61: Cap 7
+      'C a p í t u l o 8\nO TRAFICANTE\nAquele homem perigoso rondava os arredores da escola.', // 76: Cap 8
+      `Renato avançava pela sala.
+Agora meu coração não está tão pesado...
+São Paulo, 10/07/75
+E P Í L O G O
+Hoje papai foi julgado.
+O juiz se levantou e proferiu a sentença final.`, // 112: Epílogo
+      'Rubens Lopes Mascarenhas foi absolvido pelo júri popular.' // 113
+    ];
+
+    const structured = extractor.buildStructuredBookFromPages(
+      {
+        totalPages: 113,
+        pages: mockPages,
+        fullText: mockPages.join('\n\n'),
+      },
+      'Adelaide_Carraro_O_Estudante.pdf',
+      {
+        titlePt: 'O Estudante',
+        author: 'Adelaide Carraro',
+        originalYear: 1975,
+        publisher: 'Editora Global',
+      }
+    );
+
+    // Deve identificar exatamente as 11 seções da obra, sem colapsar em 2 unidades
+    expect(structured.chapters.length).toBe(11);
+
+    const chapterTitles = structured.chapters.map((c) => c.titlePt);
+
+    // Validação das 11 unidades:
+    expect(chapterTitles[0]).toMatch(/Leia, por favor/i);
+    expect(chapterTitles[1]).toMatch(/O Estudante/i);
+    expect(chapterTitles[2]).toMatch(/Capítulo 1 — Minha Casa/i);
+    expect(chapterTitles[3]).toMatch(/Capítulo 2 — A Primeira Professora/i);
+    expect(chapterTitles[4]).toMatch(/Capítulo 3 — Viagem/i);
+    expect(chapterTitles[5]).toMatch(/Capítulo 4 — O Preso/i);
+    expect(chapterTitles[6]).toMatch(/Capítulo 5 — A Criança/i);
+    expect(chapterTitles[7]).toMatch(/Capítulo 6 — O Colégio/i);
+    expect(chapterTitles[8]).toMatch(/Capítulo 7 — Meu Mestre/i);
+    expect(chapterTitles[9]).toMatch(/Capítulo 8 — O Traficante/i);
+    expect(chapterTitles[10]).toMatch(/^Epílogo$/i);
+
+    // Validação de que "EPÍLOGO" NÃO comeu a frase narrativa seguinte no título
+    expect(chapterTitles[10]).not.toContain('Hoje papai foi julgado');
+
+    // Validação de que a frase narrativa está preservada dentro do corpo do Epílogo
+    const epilogueChapter = structured.chapters[10];
+    const epilogueText = epilogueChapter.sections.flatMap((s) => s.paragraphsPt).join(' ');
+    expect(epilogueText).toContain('Hoje papai foi julgado');
+
+    // Validação das Partes nomeadas associadas aos subtítulos
+    expect(structured.chapters[1].subtitlePt).toContain('Parte Azul');
+    expect(structured.chapters[2].subtitlePt).toContain('Parte Azul');
+    expect(structured.chapters[7].subtitlePt).toContain('Parte Negra');
+    expect(structured.chapters[10].subtitlePt).toContain('Parte Negra');
+
+    // Validação de que o texto híbrido da página 2 foi preservado em "Leia, por favor"
+    const leiaText = structured.chapters[0].sections.flatMap((s) => s.paragraphsPt).join(' ');
+    expect(leiaText).toContain('A campainha tocou. Atendi.');
+    expect(leiaText).not.toContain('MINHA CASA.....................................................................................................5');
+  });
 });

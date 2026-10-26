@@ -716,10 +716,81 @@ export class PdfExtractorService {
   }
 
   /**
+   * Normaliza textos com espaçamento tipográfico expandido (letter tracking/kerning),
+   * comum em cabeçalhos de capítulos, partes e sumários em PDFs e OCRs, ex.:
+   * "C a p í t u l o 1" -> "Capítulo 1"
+   * "S u m á r i o" -> "Sumário"
+   * "P A R T E   A Z U L" -> "PARTE AZUL"
+   * "E P Í L O G O" -> "EPÍLOGO"
+   */
+  public collapseSpacedLetters(text: string): string {
+    if (!text) return text;
+    return text
+      .split(/\s{2,}/)
+      .map((segment) =>
+        segment.replace(/\b([a-zA-ZÀ-ÿ])(?:\s+([a-zA-ZÀ-ÿ])){2,}\b/g, (match) => {
+          const chars = match.split(/\s+/);
+          if (chars.every((c) => c.length === 1)) {
+            return chars.join('');
+          }
+          return match;
+        })
+      )
+      .join(' ')
+      .trim();
+  }
+
+  /**
+   * Normaliza títulos para comparação flexível entre entradas do sumário e linhas do corpo do texto
+   */
+  public normalizeTitleForComparison(t: string): string {
+    return t
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/^(?:cap[íi]tulo|capitulo|\d+)\s*[:.—-]?\s*/, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  /**
+   * Divide o conteúdo de uma página de Sumário que compartilha espaço com o corpo do texto:
+   * 1. tocText: as linhas que compõem as entradas do Sumário
+   * 2. bodyText: as linhas posteriores que já pertencem ao texto do livro
+   */
+  public splitTocPageContent(pageText: string): { tocText: string; bodyText: string } {
+    const lines = pageText.split('\n');
+    let lastTocLineIdx = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const normLine = this.collapseSpacedLetters(line);
+      if (this.isTocLine(normLine) || /\b(sum[áa]rio|índice|indice|contents)\b/i.test(normLine)) {
+        lastTocLineIdx = i;
+      }
+    }
+
+    if (lastTocLineIdx === -1) {
+      return { tocText: '', bodyText: pageText };
+    }
+
+    const tocLines = lines.slice(0, lastTocLineIdx + 1);
+    const bodyLines = lines.slice(lastTocLineIdx + 1);
+
+    const cleanBodyLines = bodyLines.filter(
+      (l) => !/^\s*(?:-\s*)?\d{1,4}(?:\s*-)?\s*$/.test(l.trim())
+    );
+
+    return {
+      tocText: tocLines.join('\n').trim(),
+      bodyText: cleanBodyLines.join('\n').trim(),
+    };
+  }
+
+  /**
    * Verifica se uma linha corresponde à estrutura típica de entrada de Sumário (título + pontilhado/espaços + número de página)
    */
   public isTocLine(line: string): boolean {
-    const trimmed = line.trim();
+    const trimmed = this.collapseSpacedLetters(line.trim());
     if (!trimmed || trimmed.length < 3) return false;
     // 1. Linha terminando com sequência de pontos/espaços/tabs e número de página: "1. Sair à luz ... 17"
     if (/(?:\.{2,}|\s{3,}|\t+)\s*\d{1,4}\s*$/.test(trimmed)) {
@@ -737,7 +808,8 @@ export class PdfExtractorService {
    */
   public isTableOfContentsPage(pageText: string): boolean {
     if (!pageText) return false;
-    const lines = pageText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const normalizedText = this.collapseSpacedLetters(pageText);
+    const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return false;
 
     const first5 = lines.slice(0, 5).join(' ').toLowerCase();
@@ -770,7 +842,8 @@ export class PdfExtractorService {
       const pageText = page.text.trim();
       if (!pageText) continue;
 
-      const lines = pageText.split('\n').map((l) => l.trim()).filter(Boolean);
+      const normalizedText = this.collapseSpacedLetters(pageText);
+      const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
       const first5 = lines.slice(0, 5).join(' ').toLowerCase();
       const hasTocHeading = /\b(sum[áa]rio|índice|indice|contents|table of contents|sumario geral|índice geral)\b/i.test(first5);
 
@@ -844,10 +917,10 @@ export class PdfExtractorService {
    * Verifica se uma linha corresponde a qualquer delimitador estrutural (Parte, Capítulo, Prefácio, Introdução, Conclusão, Apêndice, Notas, Agradecimentos)
    */
   public isAnyDelimiter(line: string): boolean {
-    const trimmed = line.trim();
+    const trimmed = this.collapseSpacedLetters(line.trim());
     if (!trimmed || trimmed.length > 80) return false;
     if (
-      /^(?:cap[íi]tulo|capitulo|chapter|pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|introdu[çc][ãa]o|introduction|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix|notas|agradecimentos|parte\s+\d+|parte\s+[ivxlcdm]+)\b/i.test(
+      /^(?:cap[íi]tulo|capitulo|chapter|pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|introdu[çc][ãa]o|introduction|conclus[ãa]o|conclusion|ep[íi]logo|epilogue|ap[êe]ndice|appendix|notas|agradecimentos|leia[, ]+por\s+favor|parte\s+[a-z0-9à-ú\s]+|(?:primeira|segunda|terceira|quarta|quinta)\s+parte)\b/i.test(
         trimmed
       )
     ) {
@@ -866,6 +939,7 @@ export class PdfExtractorService {
         return true;
       }
     }
+
     return false;
   }
 
@@ -879,6 +953,8 @@ export class PdfExtractorService {
       currentChapterNumber?: number;
       inBackMatter?: boolean;
       currentUnitType?: string;
+      tocEntries?: any[];
+      pageNumber?: number;
     }
   ): {
     type: 'preface' | 'intro' | 'chapter' | 'conclusion' | 'appendix' | 'part';
@@ -886,7 +962,9 @@ export class PdfExtractorService {
     title: string;
     consumedNextLine?: boolean;
   } | null {
-    const trimmed = line.trim();
+    const rawTrimmed = line.trim();
+    if (!rawTrimmed) return null;
+    const trimmed = this.collapseSpacedLetters(rawTrimmed);
     if (!trimmed) return null;
     if (trimmed.length > 130 && !/^(?:notas|agradecimentos|ap[êe]ndice)\b/i.test(trimmed)) return null;
 
@@ -904,25 +982,31 @@ export class PdfExtractorService {
       return null;
     }
 
-    // 0. Delimitador de Parte (PARTE 1, PARTE 2 – SENTIR E CONHECER)
-    const partRegex = /^(?:parte\s+([0-9ivxlcdm]+))\b(?:\s*[—–-]\s*(.*))?$/i;
+    // 0. Delimitador de Parte (PARTE 1, PARTE 2 – SENTIR E CONHECER, PARTE AZUL, PARTE NEGRA)
+    const partRegex =
+      /^(?:parte\s+([a-z0-9à-ú\s]+)|(?:primeira|segunda|terceira|quarta|quinta|sexta|s[ée]tima|oitava|nona|d[ée]cima)\s+parte)\b(?:\s*[—–-]\s*(.*))?$/i;
     const partMatch = trimmed.match(partRegex);
     if (partMatch) {
-      const partNum = partMatch[1];
+      const rawPart = (partMatch[1] || partMatch[0]).trim();
       const rest = partMatch[2]?.trim() || '';
-      let title = `Parte ${partNum}`;
+      let title = `Parte ${formatTitleCase(rawPart.replace(/^parte\s+/i, ''))}`;
       let consumedNextLine = false;
 
       if (rest) {
-        title = `Parte ${partNum} — ${rest.replace(/^[:.—-\s]+/, '')}`;
+        title = `${title} — ${rest.replace(/^[:.—-\s]+/, '')}`;
       } else if (
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
-        !this.isAnyDelimiter(nextLine)
+        !this.isAnyDelimiter(nextLine) &&
+        !/[.!?]$/.test(nextLine.trim()) &&
+        !(context?.tocEntries && context.tocEntries.some((e) => !e.isPart && this.normalizeTitleForComparison(e.title) === this.normalizeTitleForComparison(nextLine)))
       ) {
-        title = `Parte ${partNum} — ${nextLine.trim()}`;
-        consumedNextLine = true;
+        const nextNorm = this.collapseSpacedLetters(nextLine.trim());
+        if (!/^(?:cap[íi]tulo|chapter|\d+)\b/i.test(nextNorm)) {
+          title = `${title} — ${nextLine.trim()}`;
+          consumedNextLine = true;
+        }
       }
 
       return {
@@ -932,23 +1016,25 @@ export class PdfExtractorService {
       };
     }
 
-    // 1. Delimitador Prefácio
-    const prefaceRegex = /^(?:pref[áa]cio|prefacio|preface|pr[óo]logo|prologue)\b(?:\s*[:.—-]?\s*(.*))?$/i;
+    // 1. Delimitador Prefácio / Nota da Autora
+    const prefaceRegex =
+      /^(?:pref[áa]cio|prefacio|preface|pr[óo]logo|prologue|leia[, ]+por\s+favor)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const prefMatch = trimmed.match(prefaceRegex);
     if (prefMatch) {
       const rest = prefMatch[1]?.trim() || '';
-      let title = 'Prefácio';
+      let title = /^leia/i.test(trimmed) ? 'Leia, por favor' : 'Prefácio';
       let consumedNextLine = false;
 
       if (rest) {
-        title = `Prefácio: ${rest.replace(/^[:.—-\s]+/, '')}`;
+        title = `${title}: ${rest.replace(/^[:.—-\s]+/, '')}`;
       } else if (
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
-        !this.isAnyDelimiter(nextLine)
+        !this.isAnyDelimiter(nextLine) &&
+        !/[.!?]$/.test(nextLine.trim())
       ) {
-        title = `Prefácio: ${nextLine.trim()}`;
+        title = `${title}: ${nextLine.trim()}`;
         consumedNextLine = true;
       }
 
@@ -960,7 +1046,7 @@ export class PdfExtractorService {
       };
     }
 
-    // 2. Delimitador Capítulo explícito: 'Capítulo 1', 'Capítulo 1: O Começo'
+    // 2. Delimitador Capítulo explícito: 'Capítulo 1', 'C a p í t u l o 1', 'Capítulo 1: O Começo'
     if (!context?.inBackMatter) {
       const chapterRegex =
         /^(?:cap[íi]tulo|capitulo|chapter)\b(?:\s*[:.—-]?\s*([a-z0-9à-ú]+))?(?:\s*[:.—-]?\s*(.*))?$/i;
@@ -988,16 +1074,17 @@ export class PdfExtractorService {
           let consumedNextLine = false;
 
           if (parsedNum !== null && rest) {
-            title = `Capítulo ${parsedNum}: ${rest.replace(/^[:.—-\s]+/, '')}`;
+            title = `Capítulo ${parsedNum} — ${formatTitleCase(rest.replace(/^[:.—-\s]+/, ''))}`;
           } else if (
             parsedNum !== null &&
             !rest &&
             nextLine &&
             nextLine.trim().length > 2 &&
             nextLine.trim().length < 80 &&
-            !this.isAnyDelimiter(nextLine)
+            !this.isAnyDelimiter(nextLine) &&
+            !/[.!?]$/.test(nextLine.trim())
           ) {
-            title = `Capítulo ${parsedNum}: ${nextLine.trim()}`;
+            title = `Capítulo ${parsedNum} — ${formatTitleCase(nextLine.trim())}`;
             consumedNextLine = true;
           } else if (parsedNum !== null && !rest) {
             title = `Capítulo ${parsedNum}`;
@@ -1037,12 +1124,19 @@ export class PdfExtractorService {
         }
 
         if (isShort && noTerminalPunctuation && noLeadingPunctuation && noCitation && noNarrativePhrases && isSequential) {
+          let consumedNextLine = false;
+          if (
+            nextLine &&
+            this.normalizeTitleForComparison(nextLine) === this.normalizeTitleForComparison(rest)
+          ) {
+            consumedNextLine = true;
+          }
           const title = `Capítulo ${num}: ${rest}`;
           return {
             type: 'chapter',
             number: num,
             title,
-            consumedNextLine: false,
+            consumedNextLine,
           };
         }
       }
@@ -1062,7 +1156,8 @@ export class PdfExtractorService {
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
-        !this.isAnyDelimiter(nextLine)
+        !this.isAnyDelimiter(nextLine) &&
+        !/[.!?]$/.test(nextLine.trim())
       ) {
         title = `Introdução: ${nextLine.trim()}`;
         consumedNextLine = true;
@@ -1090,7 +1185,8 @@ export class PdfExtractorService {
         nextLine &&
         nextLine.trim().length > 2 &&
         nextLine.trim().length < 80 &&
-        (!this.isAnyDelimiter(nextLine) || /^notas\s+sobre\b/i.test(nextLine.trim()))
+        (!this.isAnyDelimiter(nextLine) || /^notas\s+sobre\b/i.test(nextLine.trim())) &&
+        !/[.!?]$/.test(nextLine.trim())
       ) {
         title = `Apêndice: ${nextLine.trim()}`;
         consumedNextLine = true;
@@ -1116,10 +1212,98 @@ export class PdfExtractorService {
       /^(?:conclus[ãa]o|conclusion|ep[íi]logo|epilogue|agradecimentos|acknowledgements|acknowledgments)\b(?:\s*[:.—-]?\s*(.*))?$/i;
     const endMatch = trimmed.match(endRegex);
     if (endMatch) {
+      const rest = endMatch[1]?.trim() || '';
+      let title = /agradecimentos/i.test(trimmed)
+        ? 'Agradecimentos'
+        : /ep[íi]logo/i.test(trimmed)
+        ? 'Epílogo'
+        : 'Conclusão';
+      let consumedNextLine = false;
+
+      if (rest) {
+        title = `${title}: ${rest.replace(/^[:.—-\s]+/, '')}`;
+      } else if (
+        nextLine &&
+        nextLine.trim().length > 2 &&
+        nextLine.trim().length < 80 &&
+        !this.isAnyDelimiter(nextLine) &&
+        !/[.!?]$/.test(nextLine.trim())
+      ) {
+        title = `${title}: ${nextLine.trim()}`;
+        consumedNextLine = true;
+      }
+
       return {
         type: 'conclusion',
-        title: trimmed.length > 50 ? 'Agradecimentos' : trimmed,
+        title,
+        consumedNextLine,
       };
+    }
+
+    // 8. Delimitador baseado em entradas do Sumário (TOC-Driven matching)
+    if (context?.tocEntries && context.tocEntries.length > 0 && !context?.inBackMatter) {
+      const normLine = this.normalizeTitleForComparison(trimmed);
+      const currentPage = context.pageNumber;
+
+      const matchingEntry = context.tocEntries.find((entry) => {
+        if (entry.isPart) return false;
+        const normEntry = this.normalizeTitleForComparison(entry.title);
+        if (normEntry !== normLine) return false;
+
+        if (currentPage !== undefined && entry.targetPage) {
+          return Math.abs(currentPage - entry.targetPage) <= 6;
+        }
+        return true;
+      });
+
+      if (matchingEntry) {
+        if (matchingEntry.isPrefaceOrIntro) {
+          return {
+            type: 'preface',
+            number: 0,
+            title: formatTitleCase(matchingEntry.title),
+            consumedNextLine: false,
+          };
+        }
+        if (matchingEntry.isConclusionOrEpilogue) {
+          return {
+            type: 'conclusion',
+            number: 0,
+            title: formatTitleCase(matchingEntry.title),
+            consumedNextLine: false,
+          };
+        }
+
+        const isBeforeChapter1 = (context?.currentChapterNumber || 0) === 0 && !matchingEntry.chapterNumber;
+        if (isBeforeChapter1) {
+          return {
+            type: 'intro',
+            number: 0,
+            title: formatTitleCase(matchingEntry.title),
+            consumedNextLine: false,
+          };
+        }
+
+        if (
+          matchingEntry.chapterNumber !== undefined &&
+          context?.currentChapterNumber !== undefined &&
+          matchingEntry.chapterNumber <= context.currentChapterNumber
+        ) {
+          return null;
+        }
+
+        const nextNum = (context?.currentChapterNumber || 0) + 1;
+        const chapNum = matchingEntry.chapterNumber ?? nextNum;
+
+        return {
+          type: 'chapter',
+          number: chapNum,
+          title: matchingEntry.title.toLowerCase().startsWith('cap')
+            ? formatTitleCase(matchingEntry.title)
+            : `Capítulo ${chapNum} — ${formatTitleCase(matchingEntry.title)}`,
+          consumedNextLine: false,
+        };
+      }
     }
 
     return null;
@@ -1180,20 +1364,39 @@ export class PdfExtractorService {
    */
   public parseTableOfContentsEntries(
     tocPages: Array<{ pageNumber: number; text: string }>
-  ): Array<{ title: string; chapterNumber?: number; targetPage?: number }> {
-    const entries: Array<{ title: string; chapterNumber?: number; targetPage?: number }> = [];
+  ): Array<{
+    title: string;
+    chapterNumber?: number;
+    targetPage: number;
+    isPart?: boolean;
+    isPrefaceOrIntro?: boolean;
+    isConclusionOrEpilogue?: boolean;
+  }> {
+    const entries: Array<{
+      title: string;
+      chapterNumber?: number;
+      targetPage: number;
+      isPart?: boolean;
+      isPrefaceOrIntro?: boolean;
+      isConclusionOrEpilogue?: boolean;
+    }> = [];
     const entryRegex =
       /^(?:(?:cap[íi]tulo|chapter|\d+)\s*[:.—-]?\s*)?(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)\s*$/i;
 
     for (const page of tocPages) {
-      const lines = page.text.split('\n').map((l) => l.trim()).filter(Boolean);
+      const normalizedText = this.collapseSpacedLetters(page.text);
+      const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
       for (const line of lines) {
         const capNumMatch = line.match(/^(\d{1,2})\s*[.—-]\s*(.*?)(?:\.{2,}|\s{3,}|\t+)\s*(\d+)/);
         if (capNumMatch) {
+          const title = capNumMatch[2].replace(/\.+$/, '').trim();
           entries.push({
             chapterNumber: parseInt(capNumMatch[1], 10),
-            title: capNumMatch[2].replace(/\.+$/, '').trim(),
+            title,
             targetPage: parseInt(capNumMatch[3], 10),
+            isPart: /^parte\b/i.test(title),
+            isPrefaceOrIntro: /^(?:pref[áa]cio|pr[óo]logo|introdu[çc][ãa]o|leia[, ]+por\s+favor)\b/i.test(title),
+            isConclusionOrEpilogue: /^(?:conclus[ãa]o|ep[íi]logo|posf[áa]cio|ap[êe]ndice|notas|agradecimentos)\b/i.test(title),
           });
           continue;
         }
@@ -1203,9 +1406,23 @@ export class PdfExtractorService {
           const rawTitle = match[1]?.trim() || line;
           const targetPage = parseInt(match[2], 10);
           if (!isNaN(targetPage) && targetPage > 0) {
+            const cleanTitle = rawTitle.replace(/\.+$/, '').trim();
+            const isPart = /^parte\b/i.test(cleanTitle);
+            const isPrefaceOrIntro =
+              /^(?:pref[áa]cio|pr[óo]logo|introdu[çc][ãa]o|leia[, ]+por\s+favor)\b/i.test(cleanTitle);
+            const isConclusionOrEpilogue =
+              /^(?:conclus[ãa]o|ep[íi]logo|posf[áa]cio|ap[êe]ndice|notas|agradecimentos)\b/i.test(cleanTitle);
+
+            const chapNumMatch = cleanTitle.match(/^cap[íi]tulo\s+(\d+)\b/i);
+            const chapterNumber = chapNumMatch ? parseInt(chapNumMatch[1], 10) : undefined;
+
             entries.push({
-              title: rawTitle.replace(/\.+$/, '').trim(),
+              title: cleanTitle,
+              chapterNumber,
               targetPage,
+              isPart,
+              isPrefaceOrIntro,
+              isConclusionOrEpilogue,
             });
           }
         }
@@ -1290,18 +1507,25 @@ export class PdfExtractorService {
 
     // 1. Identificar bloco de Sumário / Índice (NUNCA incluir no texto de leitura dos capítulos)
     const tocPageNumbers = this.identifyTableOfContentsPages(nonEmptyPages);
-    const tocPages = nonEmptyPages.filter((p) => tocPageNumbers.has(p.pageNumber));
     const firstTocPage = tocPageNumbers.size > 0 ? Math.min(...tocPageNumbers) : Infinity;
     const lastTocPage = tocPageNumbers.size > 0 ? Math.max(...tocPageNumbers) : 0;
 
-    // 2. Identificar seções de Front Matter preliminares (Dedicatória / Epígrafe)
+    // 2. Identificar seções de Front Matter preliminares (Dedicatória / Epígrafe) e separar TOC / Body
     const dedicationPages: Array<{ pageNumber: number; text: string }> = [];
     const candidateBodyPages: Array<{ pageNumber: number; text: string }> = [];
+    const tocPages: Array<{ pageNumber: number; text: string }> = [];
 
     let mainContentStarted = false;
     for (const page of nonEmptyPages) {
-      // Se for página de Sumário / Índice, NUNCA incluir no texto de leitura dos capítulos!
+      // Se for página de Sumário / Índice, separa o sumário do conteúdo seguinte compartilhado na mesma página
       if (tocPageNumbers.has(page.pageNumber)) {
+        const { tocText, bodyText } = this.splitTocPageContent(page.text);
+        if (tocText) {
+          tocPages.push({ pageNumber: page.pageNumber, text: tocText });
+        }
+        if (bodyText && bodyText.length > 20) {
+          candidateBodyPages.push({ pageNumber: page.pageNumber, text: bodyText });
+        }
         continue;
       }
 
@@ -1324,6 +1548,7 @@ export class PdfExtractorService {
       }
     }
 
+    const tocEntries = this.parseTableOfContentsEntries(tocPages);
     const bodyPages = candidateBodyPages;
 
     // 3. Segmentação estrita baseada em delimitadores (Parte, Capítulo, Prefácio, etc.)
@@ -1380,17 +1605,23 @@ export class PdfExtractorService {
 
         const nextLine = lines.slice(lineIdx + 1).find((l) => l.trim().length > 0);
 
-        // Se estivermos dentro da seção Notas, não saímos dela exceto para Conclusão / Agradecimentos
+        // Se estivermos dentro da seção Notas, não saímos dela exceto para Conclusão / Agradecimentos / outro Apêndice
         if (currentUnit?.id === 'notes') {
           const endDelimiter = this.matchDelimiter(line, nextLine, {
             inBackMatter: true,
             currentUnitType: 'notes',
+            tocEntries,
+            pageNumber,
           });
-          if (endDelimiter && endDelimiter.type === 'conclusion') {
+          if (endDelimiter && (endDelimiter.type === 'conclusion' || endDelimiter.type === 'appendix')) {
             units.push(currentUnit);
             currentUnit = {
-              type: 'conclusion',
-              id: 'acknowledgments',
+              type: endDelimiter.type,
+              id: endDelimiter.title.toLowerCase().startsWith('notas')
+                ? 'notes'
+                : endDelimiter.type === 'appendix'
+                ? 'appendix'
+                : 'acknowledgments',
               number: 0,
               title: endDelimiter.title,
               startPage: pageNumber,
@@ -1400,85 +1631,91 @@ export class PdfExtractorService {
             lineIdx += endDelimiter.consumedNextLine ? 2 : 1;
             continue;
           }
-        }
+          // Se estiver em 'notes' e não for conclusão/apêndice, não deve criar novos capítulos a partir das notas
+        } else {
+          const delimiter = this.matchDelimiter(line, nextLine, {
+            currentChapterNumber: chapterCounter,
+            inBackMatter,
+            currentUnitType: currentUnit?.id,
+            tocEntries,
+            pageNumber,
+          });
 
-        const delimiter = this.matchDelimiter(line, nextLine, {
-          currentChapterNumber: chapterCounter,
-          inBackMatter,
-          currentUnitType: currentUnit?.id,
-        });
+          if (delimiter) {
+            if (delimiter.type === 'part') {
+              currentPartTitle = delimiter.title;
+              lineIdx += delimiter.consumedNextLine ? 2 : 1;
+              continue;
+            }
 
-        if (delimiter) {
-          if (delimiter.type === 'part') {
-            currentPartTitle = delimiter.title;
+            if (delimiter.type === 'appendix' || delimiter.type === 'conclusion') {
+              inBackMatter = true;
+            }
+
+            // Fecha a unidade anterior se existente
+            if (currentUnit) {
+              units.push(currentUnit);
+              currentUnit = null;
+            }
+
+            if (delimiter.type === 'chapter') {
+              const num = delimiter.number ?? (chapterCounter + 1);
+              chapterCounter = num;
+              currentUnit = {
+                type: 'chapter',
+                id: `chapter-${num}`,
+                number: num,
+                title: delimiter.title || `Capítulo ${num}`,
+                partTitle: currentPartTitle || undefined,
+                startPage: pageNumber,
+                endPage: pageNumber,
+                paragraphs: [],
+              };
+            } else if (delimiter.type === 'preface') {
+              currentUnit = {
+                type: 'preface',
+                id: 'preface',
+                number: 0,
+                title: delimiter.title || 'Prefácio',
+                startPage: pageNumber,
+                endPage: pageNumber,
+                paragraphs: [],
+              };
+            } else if (delimiter.type === 'intro') {
+              currentUnit = {
+                type: 'intro',
+                id: 'intro',
+                number: 0,
+                title: delimiter.title || 'Introdução',
+                partTitle: currentPartTitle || undefined,
+                startPage: pageNumber,
+                endPage: pageNumber,
+                paragraphs: [],
+              };
+            } else {
+              const isApp = delimiter.type === 'appendix';
+              const unitId = isApp
+                ? delimiter.title.toLowerCase().startsWith('notas')
+                  ? 'notes'
+                  : 'appendix'
+                : delimiter.title.toLowerCase().includes('epílogo')
+                ? 'epilogue'
+                : 'conclusion';
+              currentUnit = {
+                type: delimiter.type,
+                id: unitId,
+                number: 0,
+                title: delimiter.title,
+                partTitle: currentPartTitle || undefined,
+                startPage: pageNumber,
+                endPage: pageNumber,
+                paragraphs: [],
+              };
+            }
+
             lineIdx += delimiter.consumedNextLine ? 2 : 1;
             continue;
           }
-
-          if (delimiter.type === 'appendix' || delimiter.type === 'conclusion') {
-            inBackMatter = true;
-          }
-
-          // Fecha a unidade anterior se existente
-          if (currentUnit) {
-            units.push(currentUnit);
-            currentUnit = null;
-          }
-
-          if (delimiter.type === 'chapter') {
-            const num = delimiter.number ?? (chapterCounter + 1);
-            chapterCounter = num;
-            currentUnit = {
-              type: 'chapter',
-              id: `chapter-${num}`,
-              number: num,
-              title: delimiter.title || `Capítulo ${num}`,
-              partTitle: currentPartTitle || undefined,
-              startPage: pageNumber,
-              endPage: pageNumber,
-              paragraphs: [],
-            };
-          } else if (delimiter.type === 'preface') {
-            currentUnit = {
-              type: 'preface',
-              id: 'preface',
-              number: 0,
-              title: delimiter.title || 'Prefácio',
-              startPage: pageNumber,
-              endPage: pageNumber,
-              paragraphs: [],
-            };
-          } else if (delimiter.type === 'intro') {
-            currentUnit = {
-              type: 'intro',
-              id: 'intro',
-              number: 0,
-              title: delimiter.title || 'Introdução',
-              partTitle: currentPartTitle || undefined,
-              startPage: pageNumber,
-              endPage: pageNumber,
-              paragraphs: [],
-            };
-          } else {
-            const isApp = delimiter.type === 'appendix';
-            const unitId = isApp
-              ? delimiter.title.toLowerCase().startsWith('notas')
-                ? 'notes'
-                : 'appendix'
-              : 'conclusion';
-            currentUnit = {
-              type: delimiter.type,
-              id: unitId,
-              number: 0,
-              title: delimiter.title,
-              startPage: pageNumber,
-              endPage: pageNumber,
-              paragraphs: [],
-            };
-          }
-
-          lineIdx += delimiter.consumedNextLine ? 2 : 1;
-          continue;
         }
 
         // Acumula parágrafos da unidade ativa
@@ -1491,11 +1728,23 @@ export class PdfExtractorService {
             lineIdx++;
             break;
           }
-          if (
+          if (currentUnit?.id === 'notes') {
+            const endDelim = this.matchDelimiter(nextL, lines[lineIdx + 1], {
+              inBackMatter: true,
+              currentUnitType: 'notes',
+              tocEntries,
+              pageNumber,
+            });
+            if (endDelim && (endDelim.type === 'conclusion' || endDelim.type === 'appendix')) {
+              break;
+            }
+          } else if (
             this.matchDelimiter(nextL, lines[lineIdx + 1], {
               currentChapterNumber: chapterCounter,
               inBackMatter,
               currentUnitType: currentUnit?.id,
+              tocEntries,
+              pageNumber,
             })
           ) {
             break;

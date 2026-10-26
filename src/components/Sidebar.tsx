@@ -254,9 +254,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           ? 'D'
                           : ch.id === 'preface'
                           ? 'P'
+                          : ch.id === 'epilogue' || ch.titlePt?.toLowerCase().includes('epílogo')
+                          ? 'E'
                           : 'I'
                         : ch.id?.startsWith('appendix')
                         ? 'A'
+                        : ch.id === 'epilogue' || ch.titlePt?.toLowerCase().includes('epílogo')
+                        ? 'E'
                         : ch.number || idx + 1}
                     </span>
                   )}

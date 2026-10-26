@@ -373,6 +373,7 @@ Analise este livro em PDF (${extracted.totalPages} páginas) e mapeie sua estrut
 1. IDENTIFICAÇÃO E ISOLAMENTO DO SUMÁRIO / ÍNDICE (TABLE OF CONTENTS):
    - Localize exatamente em quais páginas está o Sumário ou Índice do livro (o sumário pode ocupar várias páginas consecutivas, ex.: páginas 6 a 12).
    - Preencha "tableOfContentsPages" com a lista completa de todas as páginas do Sumário (ex.: [6, 7, 8, 9, 10, 11, 12]).
+   - ATENÇÃO CRÍTICA AO SUMÁRIO: Sempre use o Sumário / Índice como fonte de verdade para a lista completa de capítulos. Se o livro possui 10, 15 ou mais capítulos listados no Sumário, você DEVE gerar um item em "chapterPlan" para CADA um deles. Nunca comprima múltiplos capítulos em um só nem pule capítulos da obra original.
    - ATENÇÃO CRÍTICA: As páginas do Sumário servem unicamente como guia de navegação. Elas NUNCA devem fazer parte do intervalo de leitura de nenhum capítulo! O primeiro capítulo do livro deve começar estritamente APÓS o Sumário (ou após o prefácio/introdução).
 
 2. DELIMITADORES DE CAPÍTULO E SEÇÕES DO LIVRO:
@@ -421,6 +422,40 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
       : [];
     const tocPagesSet = new Set<number>([...localTocPages, ...outlineTocPages]);
 
+    const baselinePlan = localBaseline.chapters.map((c, idx) => {
+      const pageParts = (c.pages || '1').split('-');
+      const sPage = parseInt(pageParts[0], 10) || 1;
+      const ePage = parseInt(pageParts[1] || pageParts[0], 10) || sPage;
+      return {
+        number: c.number || idx + 1,
+        type:
+          c.id === 'dedication'
+            ? ('dedication' as const)
+            : c.id === 'preface'
+            ? ('preface' as const)
+            : c.id === 'intro' || c.number === 0
+            ? ('intro' as const)
+            : c.id === 'epilogue' || c.id === 'conclusion'
+            ? ('conclusion' as const)
+            : c.id.startsWith('appendix')
+            ? ('appendix' as const)
+            : ('chapter' as const),
+        titlePt: c.titlePt,
+        titleEn: c.titleEn,
+        subtitlePt: c.subtitlePt,
+        startPage: sPage,
+        endPage: ePage,
+      };
+    });
+
+    // Se o Gemini gerou menos de 70% dos capítulos já detectados deterministicamente pelo localBaseline,
+    // usamos o baselinePlan para evitar colapso de capítulos (ex: livro com 11 capítulos reduzido a 2)
+    const useBaseline =
+      !Array.isArray(outlineJson.chapterPlan) ||
+      outlineJson.chapterPlan.length === 0 ||
+      (localBaseline.chapters.length >= 3 &&
+        outlineJson.chapterPlan.length < Math.max(3, Math.floor(localBaseline.chapters.length * 0.7)));
+
     const chapterPlan: Array<{
       number: number;
       type?: 'dedication' | 'preface' | 'intro' | 'chapter' | 'appendix' | 'conclusion';
@@ -429,32 +464,7 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
       subtitlePt?: string;
       startPage: number;
       endPage: number;
-    }> =
-      Array.isArray(outlineJson.chapterPlan) && outlineJson.chapterPlan.length > 0
-        ? outlineJson.chapterPlan
-        : localBaseline.chapters.map((c, idx) => {
-            const pageParts = (c.pages || '1').split('-');
-            const sPage = parseInt(pageParts[0], 10) || 1;
-            const ePage = parseInt(pageParts[1] || pageParts[0], 10) || sPage;
-            return {
-              number: c.number || idx + 1,
-              type:
-                c.id === 'dedication'
-                  ? 'dedication'
-                  : c.id === 'preface'
-                  ? 'preface'
-                  : c.id === 'intro' || c.number === 0
-                  ? 'intro'
-                  : c.id.startsWith('appendix')
-                  ? 'appendix'
-                  : 'chapter',
-              titlePt: c.titlePt,
-              titleEn: c.titleEn,
-              subtitlePt: c.subtitlePt,
-              startPage: sPage,
-              endPage: ePage,
-            };
-          });
+    }> = useBaseline ? baselinePlan : outlineJson.chapterPlan;
 
     const chapters: Chapter[] = [];
     const totalCh = chapterPlan.length;
