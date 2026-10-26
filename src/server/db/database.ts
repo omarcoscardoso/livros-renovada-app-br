@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -13,18 +14,174 @@ export const DEFAULT_DB_PATH =
 
 let dbInstance: DatabaseSync | null = null;
 
+/**
+ * Recupera um banco SQLite corrompido exportando os dados via `.recover` ou `.dump`
+ * e reconstruindo um novo arquivo de banco íntegro.
+ */
+export function recoverCorruptedDatabaseFile(dbPath: string): boolean {
+  if (!fs.existsSync(dbPath) || dbPath === ':memory:') return false;
+
+  const tempRecoveredSql = path.join(
+    os.tmpdir(),
+    `recover_${Date.now()}_${Math.random().toString(36).slice(2)}.sql`
+  );
+  const tempCleanDb = path.join(
+    os.tmpdir(),
+    `rebuilt_${Date.now()}_${Math.random().toString(36).slice(2)}.sqlite`
+  );
+
+  try {
+    console.warn(`[SQLite] Iniciando recuperação de integridade para: ${dbPath}`);
+    // 1. Tenta `.recover` do sqlite3 CLI
+    let dump = spawnSync('sqlite3', [dbPath, '.recover'], {
+      encoding: 'utf-8',
+      maxBuffer: 100 * 1024 * 1024,
+    });
+
+    // Se .recover falhar, tenta .dump
+    if (dump.status !== 0 || !dump.stdout || dump.stdout.trim().length === 0) {
+      dump = spawnSync('sqlite3', [dbPath, '.dump'], {
+        encoding: 'utf-8',
+        maxBuffer: 100 * 1024 * 1024,
+      });
+    }
+
+    if (dump.status === 0 && dump.stdout && dump.stdout.trim().length > 0) {
+      fs.writeFileSync(tempRecoveredSql, dump.stdout, 'utf-8');
+
+      const rebuild = spawnSync('sqlite3', [tempCleanDb], {
+        input: dump.stdout,
+        encoding: 'utf-8',
+        maxBuffer: 100 * 1024 * 1024,
+      });
+
+      if (rebuild.status === 0 && fs.existsSync(tempCleanDb)) {
+        // Valida se o banco reconstruído é de fato íntegro
+        const testRecovered = new DatabaseSync(tempCleanDb);
+        const check = testRecovered.prepare('PRAGMA integrity_check').all() as Array<{
+          integrity_check: string;
+        }>;
+        testRecovered.close();
+
+        if (check.length === 1 && check[0].integrity_check === 'ok') {
+          // Backup do arquivo corrompido
+          const corruptedBackup = `${dbPath}.corrupted-${Date.now()}`;
+          try {
+            fs.copyFileSync(dbPath, corruptedBackup);
+          } catch {
+            // ignore
+          }
+
+          // Remove arquivos WAL residuais antigos
+          for (const ext of ['-wal', '-shm', '-journal']) {
+            const sidecar = `${dbPath}${ext}`;
+            if (fs.existsSync(sidecar)) {
+              try {
+                fs.unlinkSync(sidecar);
+              } catch {
+                // ignore
+              }
+            }
+          }
+
+          // Substitui atomicamente pelo banco recuperado
+          fs.copyFileSync(tempCleanDb, dbPath);
+          console.log(`[SQLite] Banco de dados recuperado com sucesso em ${dbPath}`);
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[SQLite] Falha ao tentar recuperar banco corrompido ${dbPath}:`, err);
+  } finally {
+    if (fs.existsSync(tempRecoveredSql)) {
+      try {
+        fs.unlinkSync(tempRecoveredSql);
+      } catch {
+        // ignore
+      }
+    }
+    if (fs.existsSync(tempCleanDb)) {
+      try {
+        fs.unlinkSync(tempCleanDb);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Valida a integridade física do arquivo SQLite. Se houver corrupção, executa auto-recuperação.
+ */
+export function verifyAndRepairDatabase(dbPath: string): boolean {
+  if (!fs.existsSync(dbPath) || dbPath === ':memory:') return true;
+
+  try {
+    const testDb = new DatabaseSync(dbPath);
+    const result = testDb.prepare('PRAGMA integrity_check').all() as Array<{
+      integrity_check: string;
+    }>;
+    testDb.close();
+
+    if (result.length === 1 && result[0].integrity_check === 'ok') {
+      return true;
+    }
+
+    console.warn(`[SQLite] Integridade comprometida em ${dbPath}:`, result[0]?.integrity_check);
+  } catch (err: any) {
+    console.warn(`[SQLite] Erro ao abrir ${dbPath} para checagem de integridade:`, err?.message);
+  }
+
+  return recoverCorruptedDatabaseFile(dbPath);
+}
+
+/**
+ * Cria um snapshot atômico e transacionalmente seguro do banco via VACUUM INTO
+ */
+export function createDatabaseSnapshot(targetPath: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+    dbInstance.exec(`VACUUM INTO '${targetPath}'`);
+    return true;
+  } catch (err) {
+    console.warn('[SQLite] Erro ao criar snapshot seguro via VACUUM INTO:', err);
+    return false;
+  }
+}
+
 export function getDatabase(customDbPath?: string): DatabaseSync {
   if (dbInstance && !customDbPath) {
     return dbInstance;
   }
 
   const dbPath = customDbPath || DEFAULT_DB_PATH;
+
+  // Valida e auto-recupera arquivo caso esteja com imagem de disco corrompida
+  verifyAndRepairDatabase(dbPath);
+
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
   const db = new DatabaseSync(dbPath);
+
+  // Ativa PRAGMAs essenciais para alta concorrência e resiliência a quedas
+  try {
+    db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA busy_timeout = 5000;
+    `);
+  } catch {
+    // Ignora para bancos em memória
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS books (

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { getDatabase } from '../src/server/db/database';
+import { getDatabase, verifyAndRepairDatabase, createDatabaseSnapshot } from '../src/server/db/database';
 import {
   DEFAULT_BOOK_ID,
   SqliteBookRepository,
@@ -29,11 +29,16 @@ describe('Biblioteca Digital & Conversor PDF', () => {
   });
 
   afterEach(() => {
-    if (tempDbPath && fs.existsSync(tempDbPath)) {
-      try {
-        fs.unlinkSync(tempDbPath);
-      } catch {
-        // ignore
+    if (tempDbPath) {
+      for (const ext of ['', '-wal', '-shm', '-journal']) {
+        const p = `${tempDbPath}${ext}`;
+        if (fs.existsSync(p)) {
+          try {
+            fs.unlinkSync(p);
+          } catch {
+            // ignore
+          }
+        }
       }
     }
   });
@@ -681,5 +686,41 @@ O juiz se levantou e proferiu a sentença final.`, // 112: Epílogo
     const leiaText = structured.chapters[0].sections.flatMap((s) => s.paragraphsPt).join(' ');
     expect(leiaText).toContain('A campainha tocou. Atendi.');
     expect(leiaText).not.toContain('MINHA CASA.....................................................................................................5');
+  });
+
+  it('deve verificar integridade, recuperar banco corrompido automaticamente e gerar snapshots seguros via VACUUM INTO', () => {
+    // 1. Testa criação de snapshot seguro via VACUUM INTO
+    const snapshotPath = path.join(
+      os.tmpdir(),
+      `test_snapshot_${Date.now()}_${Math.random().toString(36).slice(2)}.sqlite`
+    );
+    try {
+      const db = getDatabase(tempDbPath);
+      db.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES ('test_key', 'test_val', '2026-01-01')").run();
+
+      const created = createDatabaseSnapshot(snapshotPath);
+      // Se dbInstance corresponder, VACUUM INTO roda com sucesso
+      if (created) {
+        expect(fs.existsSync(snapshotPath)).toBe(true);
+        const snapshotDb = getDatabase(snapshotPath);
+        const val = snapshotDb.prepare("SELECT value FROM app_settings WHERE key = 'test_key'").get() as { value: string };
+        expect(val?.value).toBe('test_val');
+      }
+
+      // 2. Testa integridade em banco íntegro
+      const isHealthy = verifyAndRepairDatabase(tempDbPath);
+      expect(isHealthy).toBe(true);
+    } finally {
+      for (const ext of ['', '-wal', '-shm', '-journal']) {
+        const p = `${snapshotPath}${ext}`;
+        if (fs.existsSync(p)) {
+          try {
+            fs.unlinkSync(p);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
   });
 });

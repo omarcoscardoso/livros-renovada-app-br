@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { Storage, Bucket } from '@google-cloud/storage';
 import { OAuth2Client } from 'google-auth-library';
-import { PROJECT_ROOT } from '../db/database';
+import { PROJECT_ROOT, createDatabaseSnapshot, verifyAndRepairDatabase } from '../db/database';
 
 EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 25);
 
@@ -255,6 +256,9 @@ export class GcsStorageService implements IStorageService {
       console.log(
         `Banco de dados SQLite restaurado com sucesso de gs://${this.bucketName}/db/library.sqlite`
       );
+
+      // Valida se o banco baixado está íntegro; se estiver com imagem corrompida, repara automaticamente
+      verifyAndRepairDatabase(targetLocalPath);
       return true;
     } catch (err) {
       console.warn('Aviso ao restaurar banco SQLite do GCS:', err);
@@ -270,17 +274,40 @@ export class GcsStorageService implements IStorageService {
     }
 
     this.dbSyncTimer = setTimeout(async () => {
+      const tempSnapshotPath = path.join(
+        os.tmpdir(),
+        `snapshot_${Date.now()}_${Math.random().toString(36).slice(2)}.sqlite`
+      );
+
       try {
-        if (!fs.existsSync(sourceLocalPath) || !this.bucket) return;
-        const buffer = await fsPromises.readFile(sourceLocalPath);
+        if (!this.bucket) return;
+
+        // Cria snapshot atômico via VACUUM INTO para evitar páginas corrompidas e leituras concorrentes parciais
+        const createdSafeSnapshot = createDatabaseSnapshot(tempSnapshotPath);
+        const snapshotFile =
+          createdSafeSnapshot && fs.existsSync(tempSnapshotPath)
+            ? tempSnapshotPath
+            : sourceLocalPath;
+
+        if (!fs.existsSync(snapshotFile) || !this.bucket) return;
+
+        const buffer = await fsPromises.readFile(snapshotFile);
         await this.bucket.file('db/library.sqlite').save(buffer, {
           resumable: false,
           contentType: 'application/x-sqlite3',
         });
       } catch (err) {
         console.warn('Aviso ao sincronizar library.sqlite para o GCS:', err);
+      } finally {
+        if (fs.existsSync(tempSnapshotPath)) {
+          try {
+            await fsPromises.unlink(tempSnapshotPath);
+          } catch {
+            // ignore
+          }
+        }
       }
-    }, 300);
+    }, 500);
   }
 
   public async ensureDefaultAssets(

@@ -23,6 +23,7 @@ RUN apt-get update \
        ca-certificates \
        fontconfig \
        fonts-dejavu-core \
+       sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
