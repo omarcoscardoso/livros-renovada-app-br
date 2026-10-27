@@ -92,7 +92,7 @@ Muitos PDFs possuem capas com bordas de digitalização irregulares ou páginas 
 
 ### 3.3. Higienização Textual e Normalização de OCR
 
-Arquivos PDF contêm ruídos que prejudicam a fluidez da leitura em HTML. O Lumi aplica quatro filtros matemáticos e heurísticos sucessivos:
+Arquivos PDF contêm ruídos que prejudicam a fluidez da leitura em HTML. O Lumi aplica filtros matemáticos e heurísticos sucessivos:
 
 #### A. Filtro de Faux-Bold / Double-Strike OCR (`collapseFauxBold`)
 Em softwares de OCR antigos, o texto em negrito era simulado repetindo os mesmos caracteres (ex.: `T T í í t t u u l l o o`).
@@ -108,12 +108,25 @@ Em livros físicos, o topo de cada página traz o nome da obra ou do autor repet
 - Se uma linha se repete em mais de 15% a 20% das páginas, ela é classificada como ruído de corrida e expurgada.
 - Números de páginas isolados (ex.: `- 45 -` ou `72`) são removidos, preservando títulos de capítulos que iniciam no topo da página.
 
-#### C. Dewrapping e Unificação de Parágrafos (`cleanExtractedText`)
-No PDF, uma frase longa é quebrada forçadamente para caber na largura da página impressa.
-- O algoritmo concatena sentenças consecutivas, transformando linhas quebradas em parágrafos contínuos.
-- Mantém quebras de parágrafo reais quando a linha termina em ponto final, ponto e vírgula, exclamação, interrogação ou quando a linha seguinte se inicia com travessão de diálogo.
+#### C. Isolamento e Descarte de Notas de Rodapé (`stripFootnotes`)
+Notas de rodapé intercaladas na base da página causam quebras graves quando o parágrafo transita para a página seguinte.
+- **Detecção por Divisor**: Identifica linhas divisórias curtas (`___`, `----`, `–––`) da metade inferior da página para baixo, expurgando o bloco de rodapé subsequente.
+- **Detecção por Marcadores de Nota**: Identifica linhas na base precedidas por números sobrescritos (`¹`, `²`), colchetes (`[1]`), parênteses (`(1)`), asteriscos (`*`, `†`) ou números acompanhados de termos bibliográficos explícitos (`p.`, `ed.`, `editora`, `ibid.`, `op. cit.`).
+- Impede que citações bibliográficas sejam fundidas erroneamente no meio de frases do texto contínuo.
 
-#### D. Colapso de Kerning Espaçado (`collapseSpacedLetters`)
+#### D. Des-hifenização Inteligente de Final de Linha (`dehyphenateText`)
+Resolve palavras quebradas no final de linha por causa da largura da coluna do livro impresso:
+- Detecta hífens ASCII (`-`), hífens suaves (*soft hyphen* `\u00AD`) e hífens Unicode (`\u2010-\u2013`).
+- **Palavras Simples**: Une as duas partes diretamente (ex.: `con-` + `teúdo` $\rightarrow$ `conteúdo`, `transi-` + `ção` $\rightarrow$ `transição`).
+- **Palavras Compostas Legítimas**: Reconhece palavras compostas reais e prefixos normativos que exigem hífen (ex.: `guarda-chuva`, `segunda-feira`, `bem-sucedido`, `ex-presidente`, `anti-inflamatório`), preservando o hífen original.
+- **Travessões e Títulos**: Preserva hífens/travessões quando a linha seguinte inicia em letra maiúscula (ex.: `Curtis-` + `Kenneth` $\rightarrow$ `Curtis — Kenneth`) e converte duplo hífen `--` em travessão tipográfico `—`.
+
+#### E. Dewrapping e Preservação de Poesias, Versículos e Citações (`cleanExtractedText`)
+- **Prosa Contínua**: Sentenças com quebra forçada de coluna física sem pontuação terminal são unificadas com espaço.
+- **Poesias e Estrofes**: Sequências de linhas curtas consecutivas ($\le 65$ caracteres) preservam a quebra de linha direta (`\n`), mantendo a métrica e a diagramação do poema.
+- **Versículos Bíblicos e Citações**: Linhas com numeração de versículo (`1 ...`, `2 ...`) ou recuos com aspas/travessão mantêm sua separação sem colapso forçado em um bloco corrido.
+
+#### F. Colapso de Kerning Espaçado (`collapseSpacedLetters`)
 Resolve tipografias com letras artificialmente espaçadas no título (ex.: `C O N C L U S Ã O` $\rightarrow$ `CONCLUSÃO`).
 
 ---
@@ -168,6 +181,15 @@ Quando a chave da API Gemini está presente, a estruturação é realizada em du
        - `keyPointsPt`: 3 a 5 pontos centrais discutidos pelo autor.
        - `studyQuestionsPt`: 3 a 4 perguntas reflexivas para aplicação prática ou estudo em grupo.
        - `estimatedReadTimeMinutes`: Cálculo de tempo de leitura baseado na quantidade real de palavras (~180 a 200 palavras/min).
+   - **Salvaguarda Anti-Supressão (Word-Count Ratio Check)**:
+     - Após o retorno do JSON da IA, o sistema calcula o volume de palavras retornado em `paragraphsPt` e compara com o volume original de palavras extraído e limpo do PDF (`originalWordsCount`).
+     - Se o texto retornado pela IA for **inferior a 90% do original** (`wordRatio < 0.90`), o sistema aciona a salvaguarda:
+       - **Metadados Didáticos da IA Preservados**: `summaryPt`, `keyPointsPt`, `studyQuestionsPt` e `estimatedReadTimeMinutes` continuam sendo aproveitados normalmente.
+       - **Texto Integral Restaurado**: Os parágrafos de `paragraphsPt` são preenchidos diretamente pelos parágrafos locais extraídos pelo motor determinístico (`cleanExtractedText` + `splitIntoReadableParagraphs`), eliminando qualquer risco de resumo indevido ou alucinação/supressão de parágrafos.
+   - **Otimização de Memória em Runtime (Google Cloud Run)**:
+     - O buffer base64 do PDF é limpo com `null` imediatamente após a análise do contorno se as páginas possuírem texto selecionável.
+     - As requisições de capítulos limpam seus vetores de entrada em bloco `finally`.
+     - Na fila sequencial (`drainQueue`), referências a buffers brutos de PDF e imagens são explicitamente nulificadas entre cada livro para evitar vazamentos de memória (memory leaks).
 
 ---
 

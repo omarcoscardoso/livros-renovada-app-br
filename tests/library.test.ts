@@ -8,6 +8,7 @@ import {
   SqliteBookRepository,
 } from '../src/server/repositories/bookRepository';
 import { PdfExtractorService, ExtractedPdfData } from '../src/server/services/pdfExtractorService';
+import { GeminiConversionService } from '../src/server/services/geminiConversionService';
 import {
   InMemoryStorageService,
   DEFAULT_GCS_BUCKET,
@@ -1003,5 +1004,221 @@ Acontecimentos, nomes e locais citados nesta obra.` // 11: Apêndice
         }
       }
     }
+  });
+
+  it('deve des-hifenizar palavras quebradas no final de linha preservando compostas legítimas', () => {
+    const extractor = new PdfExtractorService();
+
+    // 1. Palavras simples quebradas por fim de linha (deve unir sem hífen)
+    const brokenSimple =
+      'O con-\nteúdo desta lição aborda a transi-\nção ministerial e a es\u00AD\ntrutura celular, promovendo o desen-\nvolvimento espiritual.';
+    const cleanedSimple = extractor.cleanExtractedText(brokenSimple);
+
+    expect(cleanedSimple).toContain('conteúdo');
+    expect(cleanedSimple).toContain('transição');
+    expect(cleanedSimple).toContain('estrutura');
+    expect(cleanedSimple).toContain('desenvolvimento');
+    expect(cleanedSimple).not.toContain('con-');
+    expect(cleanedSimple).not.toContain('transi-');
+
+    // 2. Palavras compostas legítimas (deve manter o hífen)
+    const compoundText =
+      'O líder usou o guarda-\nchuva na segunda-\nfeira antes do encontro bem-\nsucedido com o ex-\npresidente do conselho e tomou um anti-\ninflamatório.';
+    const cleanedCompound = extractor.cleanExtractedText(compoundText);
+
+    expect(cleanedCompound).toContain('guarda-chuva');
+    expect(cleanedCompound).toContain('segunda-feira');
+    expect(cleanedCompound).toContain('bem-sucedido');
+    expect(cleanedCompound).toContain('ex-presidente');
+    expect(cleanedCompound).toContain('anti-inflamatório');
+
+    // 3. Hífen antes de maiúscula ou duplo travessão
+    const titleAndDash = 'Ken-\nOs 100 acontecimentos e a fé--\nesperança inabalável.';
+    const cleanedTitleAndDash = extractor.cleanExtractedText(titleAndDash);
+    expect(cleanedTitleAndDash).toContain('Ken — Os');
+    expect(cleanedTitleAndDash).toContain('fé — esperança');
+  });
+
+  it('deve preservar a formatação de poesias e versículos recuados sem colapso forçado em prosa', () => {
+    const extractor = new PdfExtractorService();
+
+    // 1. Poesia com versos curtos sem pontuação terminal
+    const poem = `No meio do caminho tinha uma pedra
+tinha uma pedra no meio do caminho
+tinha uma pedra`;
+
+    const cleanedPoem = extractor.cleanExtractedText(poem);
+    const poemLines = cleanedPoem.split('\n').filter(Boolean);
+    expect(poemLines.length).toBe(3);
+    expect(poemLines[0]).toBe('No meio do caminho tinha uma pedra');
+    expect(poemLines[1]).toBe('tinha uma pedra no meio do caminho');
+    expect(poemLines[2]).toBe('tinha uma pedra');
+
+    // 2. Versículos bíblicos numerados
+    const verses = `1 No princípio era o Verbo, e o Verbo estava com Deus.
+2 Ele estava no princípio com Deus.
+3 Todas as coisas foram feitas por ele.`;
+
+    const cleanedVerses = extractor.cleanExtractedText(verses);
+    expect(cleanedVerses).toContain('1 No princípio era o Verbo');
+    expect(cleanedVerses).toContain('\n2 Ele estava no princípio');
+    expect(cleanedVerses).toContain('\n3 Todas as coisas foram feitas');
+  });
+
+  it('deve detectar e descartar notas de rodapé intercaladas na base das páginas', () => {
+    const extractor = new PdfExtractorService();
+
+    // 1. Nota de rodapé precedida por divisor curto (___)
+    const pageWithDivider = `O modelo de igreja em células resgata o sacerdócio universal de todos os crentes.
+___
+1. Larry Stockstill, The Cell Church, Editora Vida, 1998, p. 25.`;
+
+    const strippedDivider = extractor.stripFootnotes(pageWithDivider);
+    expect(strippedDivider).toContain('sacerdócio universal de todos os crentes.');
+    expect(strippedDivider).not.toContain('The Cell Church');
+    expect(strippedDivider).not.toContain('Editora Vida');
+    expect(strippedDivider).not.toContain('___');
+
+    // 2. Nota de rodapé com marcador sobrescrito/asterisco na base
+    const pageWithSuperscript = `A liderança servidora é o alicerce fundamental para a multiplicação das células.
+¹ Ver princípios e diretrizes práticas na p. 45 da edição original de 1998.`;
+
+    const strippedSuperscript = extractor.stripFootnotes(pageWithSuperscript);
+    expect(strippedSuperscript).toContain('multiplicação das células.');
+    expect(strippedSuperscript).not.toContain('Ver princípios e diretrizes práticas');
+
+    // 3. Continuidade de frase entre páginas sem intercalação de nota no meio do parágrafo
+    const page1Raw = `A verdadeira visão pastoral consiste em formar novos discípulos comprometidos com a
+___
+1. Stockstill, The Cell Church, 1998, p. 10.`;
+    const page2Raw = `comunhão fraternal e a oração perseverante em pequenos grupos.`;
+
+    const page1Clean = extractor.cleanExtractedText(page1Raw);
+    const page2Clean = extractor.cleanExtractedText(page2Raw);
+    const joined = `${page1Clean} ${page2Clean}`;
+
+    expect(joined).toBe(
+      'A verdadeira visão pastoral consiste em formar novos discípulos comprometidos com a comunhão fraternal e a oração perseverante em pequenos grupos.'
+    );
+    expect(joined).not.toContain('Stockstill');
+  });
+
+  it('deve ativar a salvaguarda anti-supressão (word-count ratio < 90%) e restaurar parágrafos locais quando a IA truncar o texto', async () => {
+    const extractor = new PdfExtractorService();
+    const db = getDatabase(tempDbPath);
+    const bookRepo = new SqliteBookRepository(db);
+    const conversion = new GeminiConversionService(bookRepo, extractor);
+
+    // Texto original do capítulo com ~120 palavras distribuídas em parágrafos ricos
+    const originalChapterText = `No primeiro ano do ministério em células, compreendemos que o templo não era o destino final, mas o ponto de partida de uma jornada transformadora para toda a cidade. Cada casa se tornou um farol de esperança onde os vizinhos encontravam acolhimento sincero e restauração espiritual.
+
+Assim como os primeiros cristãos em Jerusalém perseveravam unânimes na doutrina dos apóstolos, compartilhávamos o pão com júbilo e singeleza de coração. O discipulado não era um programa curricular de doze semanas, mas um estilo de vida relacional baseado na verdade bíblica e no serviço mútuo desinteressado.
+
+Quando os líderes compreenderam que sua missão principal era formar novos pais espirituais, a multiplicação ocorreu naturalmente com alegria e saúde ministerial irrevogável.`;
+
+    const extractedPdf: ExtractedPdfData = {
+      totalPages: 2,
+      pages: [
+        'CAPÍTULO 1: O Começo da Visão\n\n' + originalChapterText,
+        'Continuação do capítulo com princípios sólidos de oração e comunhão comunitária.',
+      ],
+      fullText: originalChapterText,
+    };
+
+    const localBaseline = extractor.buildStructuredBookFromPages(extractedPdf, 'livro_teste.pdf', {
+      titlePt: 'Livro da Visão',
+      author: 'Larry Stockstill',
+    });
+
+    // Mock do cliente Gemini onde a IA trunca os parágrafos em apenas 10 palavras (<90% do original de ~130 palavras)
+    const mockGeminiClient: any = {
+      models: {
+        generateContent: async ({ config }: any) => {
+          // Chamada 1: Outline
+          if (config?.responseSchema?.properties?.chapterPlan) {
+            return {
+              text: JSON.stringify({
+                titlePt: 'Livro da Visão',
+                titleEn: 'Vision Book',
+                subtitlePt: 'Princípios Editoriais',
+                subtitleEn: 'Editorial Principles',
+                author: 'Larry Stockstill',
+                originalYear: 1998,
+                publisher: 'Editora Renovada',
+                translatorNote: 'Edição revisada',
+                coverPageNumber: 1,
+                tableOfContentsPages: [],
+                chapterPlan: [
+                  {
+                    number: 1,
+                    type: 'chapter',
+                    titlePt: 'Capítulo 1: O Começo da Visão',
+                    titleEn: 'Chapter 1: The Beginning',
+                    subtitlePt: 'O fundamento celular',
+                    startPage: 1,
+                    endPage: 2,
+                  },
+                ],
+              }),
+            };
+          }
+
+          // Chamada 2: Conteúdo do Capítulo (com parágrafos truncados pela IA)
+          return {
+            text: JSON.stringify({
+              titlePt: 'Capítulo 1: O Começo da Visão',
+              titleEn: 'Chapter 1: The Beginning',
+              subtitlePt: 'O fundamento celular',
+              estimatedReadTimeMinutes: 5,
+              summaryPt: 'Síntese didática gerada pela IA sobre a visão de células.',
+              keyPointsPt: [
+                'O templo é ponto de partida e não destino.',
+                'O discipulado é estilo de vida relacional.',
+              ],
+              studyQuestionsPt: [
+                'Como sua célula pode acolher melhor novos visitantes?',
+                'O que significa discipulado relacional na prática?',
+              ],
+              sections: [
+                {
+                  titlePt: '',
+                  titleEn: '',
+                  // Apenas 9 palavras (menos de 10% do texto original de 130 palavras)
+                  paragraphsPt: ['Texto truncado e resumido de forma arbitrária pela inteligência artificial.'],
+                  paragraphsEn: [],
+                },
+              ],
+            }),
+          };
+        },
+      },
+    };
+
+    // Executa a conversão chamando diretamente convertWithGemini
+    const result = await (conversion as any).convertWithGemini(
+      mockGeminiClient,
+      'test-book-anti-suppression',
+      Buffer.from('fake pdf content'),
+      extractedPdf,
+      localBaseline,
+      { titlePt: 'Livro da Visão', author: 'Larry Stockstill' }
+    );
+
+    const ch1 = result.book.chapters[0];
+    expect(ch1).toBeDefined();
+
+    // 1. Valida que os metadados didáticos gerados pela IA foram PRESERVADOS
+    expect(ch1.summaryPt).toBe('Síntese didática gerada pela IA sobre a visão de células.');
+    expect(ch1.keyPointsPt).toContain('O templo é ponto de partida e não destino.');
+    expect(ch1.studyQuestionsPt).toContain('Como sua célula pode acolher melhor novos visitantes?');
+    expect(ch1.estimatedReadTimeMinutes).toBe(5);
+
+    // 2. Valida que os parágrafos em paragraphsPt foram RESTAURADOS com o texto integral local
+    // (A salvaguarda anti-supressão descartou a frase truncada de 9 palavras)
+    const combinedParagraphs = ch1.sections[0].paragraphsPt.join(' ');
+    expect(combinedParagraphs).not.toBe('Texto truncado e resumido de forma arbitrária pela inteligência artificial.');
+    expect(combinedParagraphs).toContain('No primeiro ano do ministério em células, compreendemos');
+    expect(combinedParagraphs).toContain('Assim como os primeiros cristãos em Jerusalém');
+    expect(combinedParagraphs).toContain('Quando os líderes compreenderam que sua missão principal');
   });
 });

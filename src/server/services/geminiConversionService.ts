@@ -242,17 +242,23 @@ export class GeminiConversionService {
 
     try {
       while (this.conversionQueue.length > 0) {
-        const item = this.conversionQueue.shift();
+        let item = this.conversionQueue.shift();
         if (!item) break;
 
-        await this.executeBookConversion(
-          item.bookId,
-          item.pdfInput,
-          item.originalFilename,
-          item.hints,
-          item.customInstructions,
-          item.overrideApiKey
-        );
+        try {
+          await this.executeBookConversion(
+            item.bookId,
+            item.pdfInput,
+            item.originalFilename,
+            item.hints,
+            item.customInstructions,
+            item.overrideApiKey
+          );
+        } finally {
+          // Libera explicitamente buffers de memória pesados após a conversão do livro
+          (item as any).pdfInput = null;
+          item = undefined;
+        }
       }
     } finally {
       this.isProcessingQueue = false;
@@ -460,14 +466,15 @@ export class GeminiConversionService {
     hints: BookMetadataHints,
     customInstructions?: string
   ): Promise<{ book: BookInfo; aiCoverPage?: number }> {
-    const pdfBuffer = await this.toBuffer(pdfInput);
-    const isSmallEnoughForInlinePdf = pdfBuffer.length <= 15 * 1024 * 1024; // <= 15MB
-    const hasSelectableText = extracted.fullText.trim().length > 300;
-
     let pdfBase64: string | null = null;
-    if (isSmallEnoughForInlinePdf && (!hasSelectableText || extracted.totalPages <= 80)) {
-      pdfBase64 = pdfBuffer.toString('base64');
-    }
+    try {
+      const pdfBuffer = await this.toBuffer(pdfInput);
+      const isSmallEnoughForInlinePdf = pdfBuffer.length <= 15 * 1024 * 1024; // <= 15MB
+      const hasSelectableText = extracted.fullText.trim().length > 300;
+
+      if (isSmallEnoughForInlinePdf && (!hasSelectableText || extracted.totalPages <= 80)) {
+        pdfBase64 = pdfBuffer.toString('base64');
+      }
 
     // Pre-identificação local da estrutura e sumário para guiar a IA
     const localTocPages = this.extractor.identifyTableOfContentsPages(
@@ -545,6 +552,12 @@ ${customInstructions ? `Instruções específicas: ${customInstructions}` : ''}`
         responseSchema: BOOK_OUTLINE_JSON_SCHEMA,
       },
     });
+
+    // Libera buffer base64 da memória após o outline se o texto já for selecionável
+    outlineInputs.length = 0;
+    if (hasSelectableText) {
+      pdfBase64 = null;
+    }
 
     const outlineJson = JSON.parse(outlineResponse.text || '{}');
     const outlineTocPages = Array.isArray(outlineJson.tableOfContentsPages)
@@ -653,6 +666,16 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
    - studyQuestionsPt: 3 a 4 perguntas reflexivas baseadas exclusivamente no conteúdo deste capítulo.
    - estimatedReadTimeMinutes: Tempo estimado de leitura baseado no volume real de palavras (~180 a 200 palavras por minuto).`;
 
+      // 1. Extração do texto original limpo das páginas para validação de integridade (Word-Count Ratio Check)
+      const originalPagesRaw = extracted.pages
+        .slice(startIdx, endIdx)
+        .filter((_, i) => !tocPagesSet.has(startIdx + i + 1));
+      const originalCleanText = originalPagesRaw
+        .map((p) => this.extractor.cleanExtractedText(p))
+        .join('\n\n');
+      const originalWordsCount = (originalCleanText.trim().match(/\S+/g) || []).length;
+      const localParagraphs = this.extractor.splitIntoReadableParagraphs(originalCleanText);
+
       const chapterInputs: any[] = [];
       if (!hasSelectableText && pdfBase64) {
         chapterInputs.push({
@@ -675,6 +698,9 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
             responseSchema: CHAPTER_CONTENT_JSON_SCHEMA,
           },
         });
+
+        // Libera referências de memória dos inputs do capítulo
+        chapterInputs.length = 0;
 
         const chData = JSON.parse(chResponse.text || '{}');
         const chNumber = typeof plan.number === 'number' ? plan.number : idx + 1;
@@ -707,6 +733,19 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
           }
         }
 
+        // Salvaguarda Anti-Supressão: Word-Count Ratio Check
+        const aiCombinedText = allParagraphsPt.join(' ');
+        const aiWordsCount = (aiCombinedText.trim().match(/\S+/g) || []).length;
+        const wordRatio = originalWordsCount > 50 ? aiWordsCount / originalWordsCount : 1.0;
+
+        let finalParagraphsPt = allParagraphsPt;
+        if ((wordRatio < 0.90 || allParagraphsPt.length === 0) && localParagraphs.length > 0) {
+          console.warn(
+            `[Anti-Supressão] Capítulo "${plan.titlePt}" teve palavras reduzidas pela IA (${aiWordsCount} vs ${originalWordsCount} originais, ratio: ${wordRatio.toFixed(2)} < 0.90). Acionando parágrafos determinísticos locais para garantir fidelidade textual integral.`
+          );
+          finalParagraphsPt = localParagraphs;
+        }
+
         // Regra 1: Não inclua seções na conversão quando o livro for dividido em capítulos
         const sections = [
           {
@@ -714,8 +753,8 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
             titlePt: '',
             titleEn: '',
             paragraphsPt:
-              allParagraphsPt.length > 0
-                ? allParagraphsPt
+              finalParagraphsPt.length > 0
+                ? finalParagraphsPt
                 : ['Conteúdo transcrito a partir do PDF original.'],
             paragraphsEn: allParagraphsEn,
           },
@@ -778,6 +817,9 @@ DIRETRIZES DE MÁXIMA FIDELIDADE E EXATIDÃO DO TEXTO ORIGINAL:
       },
       aiCoverPage: Number(outlineJson.coverPageNumber) || 1,
     };
+    } finally {
+      pdfBase64 = null;
+    }
   }
 
   public async askStudyAssistant(params: {

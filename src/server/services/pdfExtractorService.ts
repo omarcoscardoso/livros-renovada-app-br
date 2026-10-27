@@ -84,7 +84,10 @@ export class PdfExtractorService {
     // Phase 2, Step 3.1: Expurgar cabeçalhos e rodapés de corrida repetitivos
     rawPages = this.stripRunningHeadersAndFooters(rawPages);
 
-    // Phase 2, Steps 3.2 & 3.3: Desfazer quebras forçadas e normalizar tipografia por página
+    // Phase 2, Step 3.1b: Expurgar notas de rodapé isoladas na base das páginas
+    rawPages = rawPages.map((p) => this.stripFootnotes(p));
+
+    // Phase 2, Steps 3.2 & 3.3: Desfazer quebras forçadas, des-hifenizar e normalizar tipografia por página
     const pages = rawPages.map((p) => this.cleanExtractedText(p));
 
     return {
@@ -486,13 +489,20 @@ export class PdfExtractorService {
       let selectedCropBuffer: Buffer | null = null;
 
       for (const pageNum of candidatePages) {
-        const renderedArrayBuffer = await renderPageAsImage(new Uint8Array(rawBuffer), pageNum, {
-          canvasImport: () => import('@napi-rs/canvas'),
-          scale: 2.0,
-        });
+        let renderedArrayBuffer: Uint8Array | ArrayBuffer | null = await renderPageAsImage(
+          new Uint8Array(rawBuffer),
+          pageNum,
+          {
+            canvasImport: () => import('@napi-rs/canvas'),
+            scale: 2.0,
+          }
+        );
 
-        const pagePngBuffer = Buffer.from(renderedArrayBuffer);
+        let pagePngBuffer: Buffer | null = Buffer.from(renderedArrayBuffer);
+        renderedArrayBuffer = null;
+
         const analysis = await this.analyzeAndCropCoverPage(pagePngBuffer);
+        pagePngBuffer = null;
 
         if (analysis.hasVisualContent) {
           selectedPage = pageNum;
@@ -567,6 +577,8 @@ export class PdfExtractorService {
     const hasVisualContent = nonWhiteRatio > 0.004;
 
     if (!hasVisualContent || minX >= maxX || minY >= maxY) {
+      canvas.width = 1;
+      canvas.height = 1;
       return { hasVisualContent: false, croppedBuffer: pngBuffer };
     }
 
@@ -597,15 +609,25 @@ export class PdfExtractorService {
       outCtx.fillRect(0, 0, cropW, cropH);
       outCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
+      const croppedBuffer = outCanvas.toBuffer('image/png');
+      canvas.width = 1;
+      canvas.height = 1;
+      outCanvas.width = 1;
+      outCanvas.height = 1;
+
       return {
         hasVisualContent: true,
-        croppedBuffer: outCanvas.toBuffer('image/png'),
+        croppedBuffer,
       };
     }
 
+    const croppedBuffer = canvas.toBuffer('image/png');
+    canvas.width = 1;
+    canvas.height = 1;
+
     return {
       hasVisualContent: true,
-      croppedBuffer: canvas.toBuffer('image/png'),
+      croppedBuffer,
     };
   }
 
@@ -705,15 +727,153 @@ export class PdfExtractorService {
     });
   }
 
+  public static readonly KNOWN_COMPOUND_WORDS = new Set<string>([
+    'guarda-chuva', 'guarda-roupa', 'guarda-costas', 'guarda-civil', 'guarda-vidas', 'guarda-noturno',
+    'porta-voz', 'porta-malas', 'porta-bandeira', 'porta-joias', 'porta-retratos',
+    'beija-flor', 'couve-flor', 'ano-luz', 'segunda-feira', 'terça-feira', 'quarta-feira',
+    'quinta-feira', 'sexta-feira', 'fim-de-semana', 'cor-de-rosa', 'arco-íris', 'pingue-pongue',
+    'para-quedas', 'para-raios', 'bate-papo', 'alto-falante', 'baixo-relevo', 'meio-dia',
+    'meio-termo', 'decreto-lei', 'médico-cirurgião', 'primeiro-ministro', 'tenente-coronel',
+    'sul-americano', 'norte-americano', 'latino-americano', 'afro-brasileiro', 'luso-brasileiro',
+    'bem-sucedido', 'bem-aventurado', 'bem-vindo', 'bem-estar', 'bem-nascido', 'bem-criado',
+    'mal-estar', 'mal-humorado', 'mal-sucedido', 'mal-educado', 'recém-nascido', 'recém-casado',
+    'recém-formado', 'recém-chegado', 'ex-presidente', 'ex-aluno', 'ex-diretor', 'ex-ministro',
+    'vice-presidente', 'vice-diretor', 'vice-líder', 'vice-governador', 'pré-requisito',
+    'pré-história', 'pós-graduação', 'pró-ativo', 'pró-atividade', 'pró-reitor', 'sem-terra',
+    'sem-teto', 'sem-vergonha', 'joão-de-barro', 'joão-ninguém'
+  ]);
+
+  public static readonly STRICT_HYPHEN_PREFIXES = new Set<string>([
+    'ex', 'vice', 'recém', 'além', 'aquém', 'sem', 'pós', 'pré', 'pró'
+  ]);
+
   /**
-   * Phase 2, Steps 3.2 & 3.3: Higienização rigorosa, dewrapping de linhas cortadas
-   * e normalização tipográfica.
+   * Identifica e expurga notas de rodapé intercaladas ou situadas na base das páginas,
+   * evitando que citações bibliográficas e notas se fundam com o texto contínuo do parágrafo.
+   */
+  public stripFootnotes(text: string): string {
+    if (!text) return '';
+
+    // Se o texto for um Sumário ou Índice, não deve expurgar linhas numeradas da listagem
+    if (/^\s*(?:sum[áa]rio|índice|contents|table of contents)\b/i.test(text.trim())) {
+      return text;
+    }
+
+    const lines = text.split('\n');
+    if (lines.length <= 1) return text;
+
+    // 1. Procura por divisor de rodapé (ex.: "___", "----", "–––") da metade inferior para baixo
+    let dividerIndex = -1;
+    for (let i = Math.floor(lines.length * 0.35); i < lines.length; i++) {
+      const lineTrim = lines[i].trim();
+      if (/^[_\-–—*]{3,}\s*$/.test(lineTrim)) {
+        dividerIndex = i;
+        break;
+      }
+    }
+
+    if (dividerIndex !== -1) {
+      return lines.slice(0, dividerIndex).join('\n').trimEnd();
+    }
+
+    // 2. Se não houver linha divisória explícita, detecta na base linhas com números sobrescritos
+    // ou marcadores inequívocos de nota (¹²³, [1], (1), *, Nota:, N. do T.)
+    let cutoffIndex = lines.length;
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const isSuperscriptOrSymbolFootnote =
+        /^(?:[¹²³⁴⁵⁶⁷⁸⁹]|\[\d{1,2}\]|\(\d{1,2}\)|[\*†‡])\s+[A-ZÀ-Úa-zà-ú]/.test(line) ||
+        /^(?:nota(?:\s+\d+)?|n\.\s*do\s*[te]|footnote|n\.t\.|n\.e\.)[:.\s]/i.test(line);
+
+      // Nota numerada na base (ex: "1 Larry Stockstill...") com citação bibliográfica explícita
+      const isExplicitNumberedFootnote =
+        /^\d{1,2}[\.\)]\s+[A-ZÀ-Ú]/.test(line) &&
+        /\b(?:p\.|pp\.|p[aá]g(?:ina)?s?|ed\.|editora|vol\.|ibid|op\.\s*cit|tradu[çc][ãa]o|citad[ao])\b/i.test(line);
+
+      if (isSuperscriptOrSymbolFootnote || isExplicitNumberedFootnote) {
+        cutoffIndex = i;
+      } else {
+        // Se encontramos uma linha que não é nota, interrompe a varredura da base
+        break;
+      }
+    }
+
+    if (cutoffIndex < lines.length) {
+      return lines.slice(0, cutoffIndex).join('\n').trimEnd();
+    }
+
+    return text;
+  }
+
+  /**
+   * Des-hifenização inteligente de final de linha:
+   * Une palavras partidas por quebra de linha (ex: con-\nteúdo -> conteúdo, transi-\nção -> transição),
+   * preservando hífens legítimos em palavras compostas reconhecidas (ex: guarda-\nchuva -> guarda-chuva, segunda-\nfeira -> segunda-feira).
+   */
+  public dehyphenateText(text: string): string {
+    if (!text) return '';
+
+    // Preserva travessão duplo/em-dash no final de linha com espaço: palavra--\noutra ou palavra—\noutra -> palavra — outra
+    let result = text.replace(/(\p{L}+)[ \t]*(?:--|—|–)\n+([ \t]*)(\p{L}+)/gu, '$1 — $3');
+
+    // Regex para hífens de final de linha: -, soft-hyphen (\u00AD), hyphen (\u2010), non-breaking hyphen (\u2011), figure dash (\u2012)
+    const hyphenPattern = /(\p{L}+)[ \t]*[-\u00AD\u2010\u2011\u2012]\n+([ \t]*)(\p{L}+)/gu;
+
+    result = result.replace(hyphenPattern, (_match, part1: string, _indent: string, part2: string) => {
+      // Se a próxima linha começar com maiúscula, preserva o hífen ou travessão (ex: Curtis-\nKenneth)
+      if (/^\p{Lu}/u.test(part2)) {
+        return `${part1} - ${part2}`;
+      }
+
+      const p1Lower = part1.toLowerCase();
+      const p2Lower = part2.toLowerCase();
+      const candidateCompound = `${p1Lower}-${p2Lower}`;
+
+      // 1. Checa se é palavra composta legítima conhecida
+      if (PdfExtractorService.KNOWN_COMPOUND_WORDS.has(candidateCompound)) {
+        return `${part1}-${part2}`;
+      }
+
+      // 2. Checa se o prefixo exige hífen obrigatório
+      if (PdfExtractorService.STRICT_HYPHEN_PREFIXES.has(p1Lower)) {
+        return `${part1}-${part2}`;
+      }
+
+      // 3. Prefixos que exigem hífen antes de 'h' ou mesma vogal (ex: anti-inflamatório, micro-ondas, auto-observação, sub-humano)
+      const vowelHyphenPrefixes = new Set([
+        'anti', 'auto', 'contra', 'extra', 'infra', 'intra', 'micro', 'macro',
+        'neo', 'proto', 'pseudo', 'retro', 'semi', 'sobre', 'sub', 'super', 'ultra'
+      ]);
+      if (vowelHyphenPrefixes.has(p1Lower)) {
+        if (p2Lower.startsWith('h') || p1Lower.slice(-1) === p2Lower[0]) {
+          return `${part1}-${part2}`;
+        }
+      }
+
+      // 4. Caso geral: palavra partida na quebra de linha do livro físico -> des-hifeniza unindo diretamente
+      return `${part1}${part2}`;
+    });
+
+    // Casos residuais de hífen solto no final de linha
+    result = result.replace(/[-\u00AD\u2010\u2011\u2012\u2013]\n+(\p{L})/gu, '$1');
+
+    return result;
+  }
+
+  /**
+   * Phase 2, Steps 3.2 & 3.3: Higienização rigorosa, dewrapping de linhas cortadas,
+   * preservação de poesias/versículos e normalização tipográfica.
    */
   public cleanExtractedText(raw: string): string {
     if (!raw) return '';
 
+    // 0. Expurgo inicial de notas de rodapé residuais na base do texto
+    let text = this.stripFootnotes(raw);
+
     // 1. Normalização de quebras de linha e remoção de caracteres de controle
-    let text = raw
+    text = text
       .replace(/\r\n/g, '\n')
       .replace(/[ \t]+/g, ' ')
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
@@ -727,20 +887,16 @@ export class PdfExtractorService {
       .replace(/C™te/g, 'Côte')
       .replace(/(?<=\s|^)0\s+([a-zà-ú]+)/g, 'O $1');
 
+    // 2.5. Des-hifenização inteligente de final de linha e preservação de palavras compostas
+    text = this.dehyphenateText(text);
+
     // 3. Normalização tipográfica (travessões e aspas)
     text = text
       .replace(/--/g, '—')
       .replace(/\s+-\s+/g, ' — ')
       .replace(/[“”]/g, '"');
 
-    // 4. Desfazimento de quebras com hífen: transi-\nção -> transição
-    // Quando a linha termina em hífen e a próxima inicia com letra minúscula, junta as partes da palavra.
-    // Quando a próxima linha inicia com maiúscula (ex: "Curtis, A. Kenneth-\nOs 100..."), preserva o hífen/travessão com espaço.
-    text = text.replace(/(\p{L})-\n+(\p{Ll})/gu, '$1$2');
-    text = text.replace(/(\p{L})-\n+(\p{Lu})/gu, '$1 - $2');
-    text = text.replace(/-\n+(\p{L})/gu, '$1');
-
-    // 5. Dewrapping de quebras de coluna forçadas sem pontuação terminal
+    // 4. Dewrapping de quebras de coluna forçadas sem pontuação terminal, com preservação de poesias/versículos
     const rawParagraphs = text.split(/\n{2,}/);
     const cleanedParas: string[] = [];
 
@@ -763,6 +919,7 @@ export class PdfExtractorService {
           continue;
         }
 
+        const prevLine = lines[i - 1];
         const prevEndsWithPunct = /[.!?:;—"']$/.test(joined);
         const isHeadingLike = /^(?:cap[íi]tulo|chapter|parte|part|[A-ZÀ-Ú\s]{4,60}$)/i.test(line);
         const isAuthorOrMeta = /^(?:by|por|autor|author|copyright|editora|published by|publicado por|\(c\)|©)\b/i.test(line);
@@ -773,13 +930,18 @@ export class PdfExtractorService {
           joined.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
         );
 
-        // Se a linha anterior foi um número isolado, a linha atual é o título (quebra antes do título)
-        // Se a linha anterior foi o título após o número, quebra após o título (início do parágrafo)
         const isPrevStandaloneNumber = i > 0 && /^(?:c\.\s*)?\d{1,4}(?:\s*[-–—]\s*\d{1,4})?$/i.test(lines[i - 1]);
         const isPrevTitleAfterNumber = i > 1 && /^(?:c\.\s*)?\d{1,4}(?:\s*[-–—]\s*\d{1,4})?$/i.test(lines[i - 2]) && lines[i - 1].length <= 80;
 
         const isCurrentTocHeading = /^(?:sum[áa]rio|índice|contents|table of contents)[:\s]*$/i.test(line.trim());
         const isCurrentTocLine = this.isTocLine(line);
+
+        // Detecção de poesia / versículos bíblicos / citações recuadas:
+        // Linhas curtas consecutivas (<=65 caracteres) ou com numeração de versículo / aspas de citação
+        const isPoeticVerse =
+          (prevLine.length <= 65 && line.length <= 65 && !/[-–—]$/.test(prevLine)) ||
+          /^\d{1,3}\s+[A-ZÀ-Ú]/.test(line) ||
+          /^[>«"“]/.test(line);
 
         const shouldBreak =
           prevEndsWithPunct ||
@@ -794,9 +956,14 @@ export class PdfExtractorService {
           isCurrentTocHeading ||
           isCurrentTocLine;
 
-        if (shouldBreak) {
+        if (isPoeticVerse) {
+          // Em poesias e versículos, preserva a quebra de linha direta (\n)
+          joined += '\n' + line;
+        } else if (shouldBreak) {
+          // Em prosa com quebra semântica ou pontuação terminal, separa parágrafos (\n\n)
           joined += '\n\n' + line;
         } else {
+          // Em prosa contínua com quebra forçada de coluna física, unifica com espaço
           joined += ' ' + line;
         }
       }
@@ -2379,7 +2546,7 @@ export class PdfExtractorService {
   /**
    * Divide o texto em parágrafos lógicos e limpos, respeitando a quebra original do texto do PDF.
    */
-  private splitIntoReadableParagraphs(text: string): string[] {
+  public splitIntoReadableParagraphs(text: string): string[] {
     if (!text) return [];
 
     const rawBlocks = text
