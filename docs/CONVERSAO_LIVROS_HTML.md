@@ -195,9 +195,9 @@ Quando a chave da API Gemini está presente, a estruturação é realizada em du
 
 ## 4. O Formato HTML Amigável Gerado
 
-### 4.1. Aplicativo E-book Offline em Arquivo Único HTML (`generateStandaloneBookHtml`)
+### 4.1. Visualização e Leitura no App Lumi
 
-Este formato é uma das principais inovações do projeto. Ele gera um **arquivo único `.html`** com tudo embutido (CSS, JavaScript, dados estruturados em JSON e estrutura semântica HTML5):
+A leitura é realizada diretamente no leitor editorial avançado da aplicação com tipografia refinada, temas e suporte à geração de PDFs diagramados via jsPDF. (A geração de standalone HTML offline foi descontinuada para simplificar a governança dos formatos).
 
 ```
 ┌────────────────────────────────────────────────────────┐

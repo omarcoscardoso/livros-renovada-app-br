@@ -210,6 +210,85 @@ function LibraryApp({
     return () => clearInterval(timer);
   }, [booksList, fetchLibrary]);
 
+  // Suporte a gestos em celulares: arrastar/puxar da esquerda para a direita para abrir o menu do livro
+  useEffect(() => {
+    if (currentView !== 'reader' || isFocusMode) return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isSwipeCandidate = false;
+    let hasTriggered = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      hasTriggered = false;
+
+      // Se o menu estiver fechado: candidato se o toque começar na lateral esquerda
+      // Se o menu estiver aberto: pode arrastar da direita para a esquerda para fechar
+      if (!isSidebarOpen) {
+        const leftZoneMax = Math.max(90, window.innerWidth * 0.28);
+        isSwipeCandidate = touchStartX <= leftZoneMax;
+      } else {
+        isSwipeCandidate = true;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isSwipeCandidate || hasTriggered || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = touch.clientY - touchStartY;
+
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
+      if (!isHorizontal) return;
+
+      if (!isSidebarOpen) {
+        // Puxando da esquerda para a direita abre o menu do livro
+        if (deltaX >= 45) {
+          hasTriggered = true;
+          setIsSidebarOpen(true);
+        }
+      } else {
+        // Puxando da direita para a esquerda fecha o menu do livro
+        if (deltaX <= -45) {
+          hasTriggered = true;
+          setIsSidebarOpen(false);
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!isSwipeCandidate || hasTriggered || e.changedTouches.length !== 1) return;
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = touch.clientY - touchStartY;
+
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+      if (!isHorizontal) return;
+
+      if (!isSidebarOpen && deltaX >= 40) {
+        hasTriggered = true;
+        setIsSidebarOpen(true);
+      } else if (isSidebarOpen && deltaX <= -40) {
+        hasTriggered = true;
+        setIsSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [currentView, isFocusMode, isSidebarOpen]);
+
   const handleSelectBook = async (bookId: string) => {
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
@@ -480,11 +559,6 @@ function LibraryApp({
                   setIsPdfOpen(true);
                 }}
                 onPrintPdf={handleDownloadPdf}
-                onOpenLibrary={() => {
-                  setIsFocusMode(false);
-                  setCurrentView('bookshelf');
-                }}
-                onOpenUpload={handleOpenUpload}
                 onOpenAdmin={() => setCurrentView('admin')}
                 theme={theme}
                 onChangeTheme={handleChangeTheme}
@@ -492,7 +566,6 @@ function LibraryApp({
                 onChangeFontSize={handleChangeFontSize}
                 bookTitle={activeBook.titlePt}
                 chapterTitle={isCoverPage ? 'Capa & Folha de Rosto' : currentChapter.titlePt}
-                totalBooksCount={Math.max(1, booksList.length)}
                 hasOriginalPdf={activeBook.hasOriginalPdf}
                 isFocusMode={isFocusMode}
                 onToggleFocusMode={() => setIsFocusMode((prev) => !prev)}

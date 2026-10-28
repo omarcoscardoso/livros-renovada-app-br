@@ -13,7 +13,7 @@ import {
   InMemoryStorageService,
   DEFAULT_GCS_BUCKET,
 } from '../src/server/services/storageService';
-import { searchBook, generateStandaloneBookHtml } from '../src/data/bookData';
+import { searchBook } from '../src/data/bookData';
 
 describe('Biblioteca Digital & Conversor PDF', () => {
   let tempDbPath: string;
@@ -150,15 +150,9 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(structured.chapters[0].sections.length).toBeGreaterThan(0);
     expect(structured.chapters[0].studyQuestionsPt.length).toBeGreaterThan(0);
 
-    // Verifica se a busca e a geração de HTML standalone funcionam com o novo livro
+    // Verifica se a busca funciona com o novo livro
     const searchRes = searchBook('Atos dos Apóstolos', structured.chapters);
     expect(searchRes.length).toBe(1);
-
-    const html = generateStandaloneBookHtml(structured, structured.chapters);
-    expect(html).toContain('A Visão Celular Contemporânea');
-    // Regra 1: Na versão HTML não deve incluir "seções", o texto é direto em parágrafos do capítulo
-    expect(html).not.toContain('<h2 class="section-title">');
-    expect(html).toContain('A igreja primitiva reunia-se no templo e de casa em casa.');
   });
 
   it('deve isolar o Sumário e identificar Dedicatória e Introdução antes dos capítulos', () => {
@@ -283,15 +277,6 @@ describe('Biblioteca Digital & Conversor PDF', () => {
     expect(ch2.sections.length).toBe(1);
     expect(ch2.sections[0].titlePt).toBe('');
     expect(ch2.sections[0].paragraphsPt.join(' ')).toContain('O crescimento saudável decorre de pais espirituais');
-
-    // 5. Geração de HTML standalone: não deve conter títulos de "seções", o texto do capítulo é direto
-    const standaloneHtml = generateStandaloneBookHtml(structured, structured.chapters);
-    expect(standaloneHtml).not.toContain('<h2 class="section-title">');
-    expect(standaloneHtml).not.toContain('class="section-title"');
-    expect(standaloneHtml).toContain('Princípios da Visão');
-    expect(standaloneHtml).toContain('O Começo da Visão');
-    expect(standaloneHtml).toContain('No primeiro ano do ministério');
-    expect(standaloneHtml).toContain('Assim como os primeiros cristãos');
   });
 
   it('deve extrair texto real de um buffer PDF válido usando PdfExtractorService em memória', async () => {
@@ -578,13 +563,6 @@ Meu primeiro agradecimento é para Seamus Heaney pela contribuição para o tít
     expect(ch3).toBeDefined();
     expect(ch3?.sections[0].paragraphsPt[0]).toContain('É compreensível que nós, cientistas, lastimemos o fato de a consciência ser um fenômeno inteiramente pessoal');
 
-    // Validação da geração de HTML independente
-    const html = generateStandaloneBookHtml(structured, structured.chapters);
-    expect(html).toContain('O Mistério da Consciência');
-    expect(html).toContain('Do Corpo e das Emoções ao Conhecimento de Si');
-    expect(html).toContain('Antônio Damásio');
-    expect(html).toContain('É compreensível que nós, cientistas, lastimemos o fato');
-    expect(html).not.toContain('PARTE 1 — INTRODUÇÃO ................................................15');
   });
 
   it('deve extrair e estruturar perfeitamente livros com espaçamento entre letras (kerning), partes nomeadas e sumário híbrido (ex.: "O Estudante" - Adelaide Carraro)', async () => {

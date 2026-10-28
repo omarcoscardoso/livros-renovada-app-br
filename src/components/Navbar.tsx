@@ -7,8 +7,6 @@ import {
   Coffee,
   FileText,
   Printer,
-  Library,
-  Upload,
   ShieldAlert,
   LogIn,
   LogOut,
@@ -25,8 +23,6 @@ interface NavbarProps {
   onOpenSearch: () => void;
   onOpenPdf: () => void;
   onPrintPdf: () => void;
-  onOpenLibrary: () => void;
-  onOpenUpload: () => void;
   onOpenAdmin?: () => void;
   theme: ReaderTheme;
   onChangeTheme: (theme: ReaderTheme) => void;
@@ -34,7 +30,6 @@ interface NavbarProps {
   onChangeFontSize: (size: FontSize) => void;
   bookTitle: string;
   chapterTitle: string;
-  totalBooksCount: number;
   hasOriginalPdf: boolean;
   isFocusMode?: boolean;
   onToggleFocusMode?: () => void;
@@ -45,8 +40,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenPdf,
   onPrintPdf,
-  onOpenLibrary,
-  onOpenUpload,
   onOpenAdmin,
   theme,
   onChangeTheme,
@@ -54,7 +47,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onChangeFontSize,
   bookTitle,
   chapterTitle,
-  totalBooksCount,
   hasOriginalPdf,
   isFocusMode = false,
   onToggleFocusMode,
@@ -81,56 +73,31 @@ export const Navbar: React.FC<NavbarProps> = ({
     ? 'text-[#705e4d] hover:text-[#2c2217]'
     : 'text-slate-500 hover:text-slate-900';
 
-  const handleUploadWithAuth = () => {
-    if (!user) {
-      openLoginModal('Faça login com sua conta Google para adicionar novos livros em PDF.');
-      return;
-    }
-    onOpenUpload();
-  };
-
   return (
     <header
       className={`sticky top-0 z-20 h-12 backdrop-blur-md border-b px-3 sm:px-6 flex items-center justify-between no-print transition-colors ${navBg}`}
     >
-      {/* Left: Table of contents button, Library button, and book/chapter title */}
+      {/* Left: Table of contents button and book/chapter title */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleSidebar}
           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium shrink-0 cursor-pointer"
-          title="Índice dos Capítulos"
+          title="Índice dos Capítulos (Menu do Livro)"
         >
           <Menu className="w-4 h-4" />
           <span className="hidden sm:inline">Índice</span>
         </button>
 
-        <button
-          onClick={onOpenLibrary}
-          className="px-2.5 py-1 rounded-lg bg-[#5C6BC0]/15 hover:bg-[#5C6BC0]/25 text-[#5C6BC0] border border-[#5C6BC0]/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
-          title="Voltar para a tela inicial do Lumi"
-        >
-          <Library className="w-3.5 h-3.5" />
-          <span>Lumi</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-[#5C6BC0]/20 text-[10px] font-mono">
-            {totalBooksCount}
+        <span className="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline">|</span>
+
+        <div className="truncate flex items-center gap-1.5 text-xs sm:text-sm font-medium font-editorial">
+          <span className="opacity-75 truncate max-w-[120px] sm:max-w-[200px] md:max-w-[320px]" title={bookTitle}>
+            {bookTitle}
           </span>
-        </button>
-
-        <button
-          onClick={handleUploadWithAuth}
-          className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
-          title="Subir novo livro em PDF e converter para leitura"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Subir PDF</span>
-        </button>
-
-        <span className="text-xs text-slate-400 dark:text-slate-500 hidden md:inline">|</span>
-
-        <div className="truncate hidden md:flex items-center gap-1.5 text-xs sm:text-sm font-medium font-editorial">
-          <span className="opacity-75 truncate max-w-[180px]">{bookTitle}</span>
           <span className="opacity-40">•</span>
-          <span className="truncate">{chapterTitle}</span>
+          <span className="truncate max-w-[130px] sm:max-w-[220px] md:max-w-[320px]" title={chapterTitle}>
+            {chapterTitle}
+          </span>
         </div>
       </div>
 

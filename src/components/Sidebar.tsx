@@ -10,7 +10,6 @@ import {
   Upload,
   Edit3,
 } from 'lucide-react';
-import { generateStandaloneBookHtml } from '../data/bookData';
 import { BookInfo, Chapter } from '../data/bookTypes';
 import { generateBookPdf } from '../utils/pdfGenerator';
 import { useAuth } from '../context/AuthContext';
@@ -67,22 +66,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
     onOpenUpload();
     onClose();
-  };
-
-  const downloadSingleHtml = () => {
-    const html = generateStandaloneBookHtml(book, chapters);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safeName = book.titlePt
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .replace(/_+/g, '_');
-    a.download = `${safeName}_Livro_Completo.html`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleDownloadPdf = async () => {
@@ -272,13 +255,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
 
-        {/* Footer: Real PDF & Single-File HTML */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/50 space-y-2">
-          {/* Real PDF Generator Button */}
+        {/* Footer: Real PDF Generator */}
+        <div className="p-3 border-t border-slate-800 bg-slate-950/50">
           <button
             onClick={handleDownloadPdf}
             disabled={isPdfGenerating}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs transition-colors shadow-sm cursor-pointer"
             title="Gera e faz o download direto do livro completo em formato PDF (.pdf)"
           >
             {isPdfGenerating ? (
@@ -292,16 +274,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span>Baixar Livro em PDF (.pdf)</span>
               </>
             )}
-          </button>
-
-          {/* Standalone Single File HTML Button */}
-          <button
-            onClick={downloadSingleHtml}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors border border-slate-700"
-            title="Baixar todo o livro em um único arquivo HTML para abrir offline em qualquer navegador ou celular"
-          >
-            <BookOpen className="w-3 h-3 text-amber-400" />
-            <span>Baixar Arquivo Único HTML (.html)</span>
           </button>
         </div>
       </aside>
