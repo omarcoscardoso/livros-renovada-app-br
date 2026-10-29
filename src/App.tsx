@@ -559,7 +559,6 @@ function LibraryApp({
                   setIsPdfOpen(true);
                 }}
                 onPrintPdf={handleDownloadPdf}
-                onOpenAdmin={() => setCurrentView('admin')}
                 theme={theme}
                 onChangeTheme={handleChangeTheme}
                 fontSize={fontSize}
