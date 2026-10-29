@@ -7,24 +7,15 @@ import {
   CheckCircle2,
   Copy,
   Check,
-  Sparkles,
-  Send,
-  Loader2,
-  BookOpenCheck,
   BookOpen,
-  Maximize2,
-  Minimize2,
   Headphones,
   Sliders,
-  Type,
-  AlignLeft,
   X,
   Highlighter,
 } from 'lucide-react';
 import { AudiobookPlayer } from './AudiobookPlayer';
 
 export type FontFamilyChoice = 'serif' | 'sans';
-export type LineHeightChoice = 'normal' | 'relaxed' | 'loose';
 
 interface ChapterReaderProps {
   book: BookInfo & { coverImageUrl?: string };
@@ -45,8 +36,6 @@ interface ChapterReaderProps {
   onSelectChapter?: (chapterId: string) => void;
   hasPrev: boolean;
   hasNext: boolean;
-  isFocusMode?: boolean;
-  onToggleFocusMode?: () => void;
 }
 
 export const ChapterReader: React.FC<ChapterReaderProps> = ({
@@ -68,8 +57,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   onSelectChapter,
   hasPrev,
   hasNext,
-  isFocusMode = false,
-  onToggleFocusMode,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showBilingual, setShowBilingual] = useState(false);
@@ -84,15 +71,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     }
   });
 
-  const [lineHeight, setLineHeight] = useState<LineHeightChoice>(() => {
-    try {
-      const saved = localStorage.getItem('ipr_reader_line_height') as LineHeightChoice;
-      return saved === 'normal' || saved === 'loose' ? saved : 'relaxed';
-    } catch {
-      return 'relaxed';
-    }
-  });
-
   const [isAudiobookOpen, setIsAudiobookOpen] = useState(false);
   const [activeSpeakingParagraph, setActiveSpeakingParagraph] = useState<number | null>(null);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
@@ -101,13 +79,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     setFontFamily(fam);
     try {
       localStorage.setItem('ipr_reader_font_family', fam);
-    } catch {}
-  };
-
-  const handleSetLineHeight = (lh: LineHeightChoice) => {
-    setLineHeight(lh);
-    try {
-      localStorage.setItem('ipr_reader_line_height', lh);
     } catch {}
   };
 
@@ -130,30 +101,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [chapter.id]);
 
-  // Keyboard shortcut listener: F or Esc for Zen Focus Mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if ((e.key === 'f' || e.key === 'F') && onToggleFocusMode) {
-        e.preventDefault();
-        onToggleFocusMode();
-      } else if (e.key === 'Escape' && isFocusMode && onToggleFocusMode) {
-        e.preventDefault();
-        onToggleFocusMode();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFocusMode, onToggleFocusMode]);
-
-  // AI Assistant & Cell Lesson Generator state
-  const [showAiPanel, setShowAiPanel] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-
   const hasEnglishTranslation = chapter.sections.some(
     (s) => Array.isArray(s.paragraphsEn) && s.paragraphsEn.some((p) => p && p.trim().length > 0)
   );
@@ -168,67 +115,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleAskAssistant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt.trim() || isAiLoading) return;
-    setIsAiLoading(true);
-    setAiResponse(null);
-    try {
-      const res = await fetch('/api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: aiPrompt,
-          bookTitle,
-          bookAuthor,
-          chapterTitle: chapter.titlePt,
-          contextText: fullChapterTextPt.slice(0, 2000),
-        }),
-      });
-      const data = await res.json();
-      setAiResponse(
-        data.text ||
-          data.fallbackResponse ||
-          data.error ||
-          'Não foi possível obter resposta da IA.'
-      );
-    } catch {
-      setAiResponse('Erro de conexão ao consultar o assistente de IA.');
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
-  const handleGenerateLesson = async () => {
-    if (isAiLoading) return;
-    setIsAiLoading(true);
-    setAiResponse(null);
-    setShowAiPanel(true);
-    try {
-      const res = await fetch('/api/generate-lesson', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: chapter.titlePt,
-          chapterNumber: chapter.number,
-          bookTitle,
-          bookAuthor,
-          chapterSummary: chapter.summaryPt,
-        }),
-      });
-      const data = await res.json();
-      setAiResponse(
-        data.lesson ||
-          data.error ||
-          'Configure a chave GEMINI_API_KEY no modal "Subir PDF" para gerar roteiros de célula.'
-      );
-    } catch {
-      setAiResponse('Erro ao gerar roteiro de reunião.');
-    } finally {
-      setIsAiLoading(false);
-    }
   };
 
   // Theme styling
@@ -382,27 +268,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         />
       </div>
 
-      {/* Floating Zen Focus Mode Exit Pill */}
-      {isFocusMode && onToggleFocusMode && (
-        <div className="fixed top-4 right-4 z-40 no-print animate-fade-in">
-          <button
-            onClick={onToggleFocusMode}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-xl border shadow-xl cursor-pointer transition-transform hover:scale-105 ${
-              theme === 'dark'
-                ? 'bg-slate-900/80 border-slate-700 text-slate-200 shadow-black/50'
-                : theme === 'sepia'
-                ? 'bg-[#ece4d0]/90 border-[#d8c7a7] text-[#2c2217] shadow-amber-950/10'
-                : 'bg-white/90 border-slate-200 text-slate-800 shadow-slate-900/10'
-            }`}
-            title="Sair do Modo Foco (Esc ou F)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">Sair do Modo Foco</span>
-            <span className="text-[10px] opacity-60 font-mono px-1 rounded bg-black/5 dark:bg-white/10">Esc</span>
-          </button>
-        </div>
-      )}
-
       <div className="max-w-3xl mx-auto space-y-10">
         {/* Book Cover Showcase before the Introduction (on the first chapter) */}
         {isFirstChapter && book.coverImageUrl && (
@@ -555,12 +420,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       ? 'bg-amber-500/15 border-l-4 border-amber-500 pl-3 py-1.5 rounded-r-lg transition-all duration-300'
                       : '';
 
-                    const customLineHeightClass =
-                      lineHeight === 'loose'
-                        ? 'leading-loose'
-                        : lineHeight === 'normal'
-                        ? 'leading-normal'
-                        : 'leading-relaxed';
+                    const customLineHeightClass = 'leading-relaxed';
 
                     if (showBilingual && enPara) {
                       return (
@@ -624,78 +484,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           </div>
         )}
 
-        {/* AI Study Assistant & 90-Minute Cell Lesson Generator */}
-        <div className={`p-5 rounded-xl border ${summaryBgClass} no-print space-y-4`}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-xs sm:text-sm font-semibold font-editorial">
-                Mentor de Estudo IA & Roteiro de Célula
-              </span>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleGenerateLesson}
-                disabled={isAiLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors"
-              >
-                <BookOpenCheck className="w-3.5 h-3.5" />
-                <span>Gerar Roteiro de Célula (90 min)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowAiPanel((prev) => !prev)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs border ${borderClass}`}
-              >
-                {showAiPanel ? 'Ocultar' : 'Fazer Pergunta'}
-              </button>
-            </div>
-          </div>
-
-          {showAiPanel && (
-            <div className="space-y-3 pt-2">
-              <form onSubmit={handleAskAssistant} className="flex gap-2">
-                <input
-                  type="text"
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder={`Pergunte sobre "${chapter.titlePt}"...`}
-                  className={`flex-1 px-3 py-2 rounded-lg border ${borderClass} bg-transparent text-xs sm:text-sm outline-none`}
-                />
-                <button
-                  type="submit"
-                  disabled={isAiLoading || !aiPrompt.trim()}
-                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5"
-                >
-                  {isAiLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Perguntar</span>
-                </button>
-              </form>
-
-              {isAiLoading && (
-                <div className="flex items-center gap-2 text-xs py-3 opacity-75">
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-                  <span>Elaborando resposta pastoral e teológica...</span>
-                </div>
-              )}
-
-              {aiResponse && (
-                <div
-                  className={`p-4 rounded-xl border ${borderClass} text-xs sm:text-sm font-editorial whitespace-pre-wrap leading-relaxed`}
-                >
-                  {aiResponse}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
 
         {/* Minimal Chapter Footer */}
         <footer
@@ -794,33 +583,9 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
               showSettingsPanel ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
             }`}
-            title="Configurações de Leitura (Fonte, Espaçamento, Temas)"
+            title="Configurações de Leitura"
           >
             <Sliders className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Focus Mode Toggle */}
-          {onToggleFocusMode && (
-            <button
-              onClick={onToggleFocusMode}
-              className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
-                isFocusMode ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
-              }`}
-              title={isFocusMode ? 'Sair do Modo Foco (Esc)' : 'Entrar no Modo Foco (F)'}
-            >
-              {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            </button>
-          )}
-
-          {/* AI Assistant Quick Trigger */}
-          <button
-            onClick={() => setShowAiPanel((prev) => !prev)}
-            className={`p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer ${
-              showAiPanel ? 'text-amber-500 bg-amber-500/15' : 'opacity-80 hover:opacity-100'
-            }`}
-            title="Assistente de Estudo IA"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
           </button>
 
           {/* Next Chapter */}
@@ -873,43 +638,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                 }`}
               >
                 Moderna (Sans)
-              </button>
-            </div>
-          </div>
-
-          {/* Line Height */}
-          <div className="space-y-1.5">
-            <span className="text-[11px] opacity-70 font-semibold">Espaçamento entre Linhas:</span>
-            <div className="grid grid-cols-3 gap-1.5 text-xs">
-              <button
-                onClick={() => handleSetLineHeight('normal')}
-                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
-                  lineHeight === 'normal'
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
-                    : 'border-white/10 hover:border-white/20'
-                }`}
-              >
-                Normal
-              </button>
-              <button
-                onClick={() => handleSetLineHeight('relaxed')}
-                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
-                  lineHeight === 'relaxed'
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
-                    : 'border-white/10 hover:border-white/20'
-                }`}
-              >
-                Médio
-              </button>
-              <button
-                onClick={() => handleSetLineHeight('loose')}
-                className={`py-1 px-2 rounded-xl border text-center transition-colors cursor-pointer ${
-                  lineHeight === 'loose'
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
-                    : 'border-white/10 hover:border-white/20'
-                }`}
-              >
-                Amplo
               </button>
             </div>
           </div>

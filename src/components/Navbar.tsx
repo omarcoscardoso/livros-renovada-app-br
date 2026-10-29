@@ -7,11 +7,8 @@ import {
   Coffee,
   FileText,
   Printer,
-  ShieldAlert,
   LogIn,
   LogOut,
-  Maximize2,
-  Minimize2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,7 +20,6 @@ interface NavbarProps {
   onOpenSearch: () => void;
   onOpenPdf: () => void;
   onPrintPdf: () => void;
-  onOpenAdmin?: () => void;
   theme: ReaderTheme;
   onChangeTheme: (theme: ReaderTheme) => void;
   fontSize: FontSize;
@@ -31,8 +27,6 @@ interface NavbarProps {
   bookTitle: string;
   chapterTitle: string;
   hasOriginalPdf: boolean;
-  isFocusMode?: boolean;
-  onToggleFocusMode?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,7 +34,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenPdf,
   onPrintPdf,
-  onOpenAdmin,
   theme,
   onChangeTheme,
   fontSize,
@@ -48,10 +41,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   bookTitle,
   chapterTitle,
   hasOriginalPdf,
-  isFocusMode = false,
-  onToggleFocusMode,
 }) => {
-  const { user, isAdmin, openLoginModal, logout } = useAuth();
+  const { user, openLoginModal, logout } = useAuth();
   const isDark = theme === 'dark';
   const isSepia = theme === 'sepia';
 
@@ -177,30 +168,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Search className="w-3.5 h-3.5 opacity-80 hover:opacity-100" />
         </button>
-
-        {/* Zen Focus Mode Button */}
-        {onToggleFocusMode && (
-          <button
-            onClick={onToggleFocusMode}
-            className={`p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer ${
-              isFocusMode ? 'text-amber-500 bg-amber-500/15' : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title={isFocusMode ? 'Sair do Modo Foco (Esc)' : 'Modo Foco Sem Distrações (F)'}
-          >
-            {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
-        )}
-
-        {/* Admin Button */}
-        {isAdmin && onOpenAdmin && (
-          <button
-            onClick={onOpenAdmin}
-            className="p-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-600 dark:text-purple-300 border border-purple-500/30 transition-colors cursor-pointer"
-            title="Painel de Administração"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-          </button>
-        )}
 
         {/* Google User Avatar / Login */}
         {user ? (
