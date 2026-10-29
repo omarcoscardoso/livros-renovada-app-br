@@ -8,7 +8,6 @@ import {
   Copy,
   Check,
   BookOpen,
-  Minimize2,
   Headphones,
   Sliders,
   X,
@@ -37,8 +36,6 @@ interface ChapterReaderProps {
   onSelectChapter?: (chapterId: string) => void;
   hasPrev: boolean;
   hasNext: boolean;
-  isFocusMode?: boolean;
-  onToggleFocusMode?: () => void;
 }
 
 export const ChapterReader: React.FC<ChapterReaderProps> = ({
@@ -60,8 +57,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   onSelectChapter,
   hasPrev,
   hasNext,
-  isFocusMode = false,
-  onToggleFocusMode,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showBilingual, setShowBilingual] = useState(false);
@@ -105,24 +100,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, [chapter.id]);
-
-  // Keyboard shortcut listener: F or Esc for Zen Focus Mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if ((e.key === 'f' || e.key === 'F') && onToggleFocusMode) {
-        e.preventDefault();
-        onToggleFocusMode();
-      } else if (e.key === 'Escape' && isFocusMode && onToggleFocusMode) {
-        e.preventDefault();
-        onToggleFocusMode();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFocusMode, onToggleFocusMode]);
 
   const hasEnglishTranslation = chapter.sections.some(
     (s) => Array.isArray(s.paragraphsEn) && s.paragraphsEn.some((p) => p && p.trim().length > 0)
@@ -290,27 +267,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           style={{ width: `${scrollPercent}%` }}
         />
       </div>
-
-      {/* Floating Zen Focus Mode Exit Pill */}
-      {isFocusMode && onToggleFocusMode && (
-        <div className="fixed top-4 right-4 z-40 no-print animate-fade-in">
-          <button
-            onClick={onToggleFocusMode}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-xl border shadow-xl cursor-pointer transition-transform hover:scale-105 ${
-              theme === 'dark'
-                ? 'bg-slate-900/80 border-slate-700 text-slate-200 shadow-black/50'
-                : theme === 'sepia'
-                ? 'bg-[#ece4d0]/90 border-[#d8c7a7] text-[#2c2217] shadow-amber-950/10'
-                : 'bg-white/90 border-slate-200 text-slate-800 shadow-slate-900/10'
-            }`}
-            title="Sair do Modo Foco (Esc ou F)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">Sair do Modo Foco</span>
-            <span className="text-[10px] opacity-60 font-mono px-1 rounded bg-black/5 dark:bg-white/10">Esc</span>
-          </button>
-        </div>
-      )}
 
       <div className="max-w-3xl mx-auto space-y-10">
         {/* Book Cover Showcase before the Introduction (on the first chapter) */}

@@ -9,8 +9,6 @@ import {
   Printer,
   LogIn,
   LogOut,
-  Maximize2,
-  Minimize2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,8 +27,6 @@ interface NavbarProps {
   bookTitle: string;
   chapterTitle: string;
   hasOriginalPdf: boolean;
-  isFocusMode?: boolean;
-  onToggleFocusMode?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -45,8 +41,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   bookTitle,
   chapterTitle,
   hasOriginalPdf,
-  isFocusMode = false,
-  onToggleFocusMode,
 }) => {
   const { user, openLoginModal, logout } = useAuth();
   const isDark = theme === 'dark';
@@ -174,19 +168,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Search className="w-3.5 h-3.5 opacity-80 hover:opacity-100" />
         </button>
-
-        {/* Zen Focus Mode Button */}
-        {onToggleFocusMode && (
-          <button
-            onClick={onToggleFocusMode}
-            className={`p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer ${
-              isFocusMode ? 'text-amber-500 bg-amber-500/15' : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title={isFocusMode ? 'Sair do Modo Foco (Esc)' : 'Modo Foco Sem Distrações (F)'}
-          >
-            {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
-        )}
 
         {/* Google User Avatar / Login */}
         {user ? (
