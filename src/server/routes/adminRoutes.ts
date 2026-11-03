@@ -132,17 +132,20 @@ export function createAdminRouter(
   });
 
   // Get Admin statistics
-  router.get('/stats', (_req: AuthenticatedRequest, res) => {
+  router.get('/stats', async (_req: AuthenticatedRequest, res) => {
     try {
       const books = bookRepo.listBooks();
       const users = userRepo.listUsers();
       const hasGeminiKey = Boolean(conversionService.resolveApiKey());
+      const effectiveStorage = storageService || getStorageService();
+      const storageDetails = await effectiveStorage.getStorageDetails();
 
       return res.json({
         totalBooks: books.length,
         totalUsers: users.length,
         adminCount: users.filter((u) => u.role === 'admin').length,
         hasGeminiKey,
+        storage: storageDetails,
         booksByStatus: {
           ready: books.filter((b) => b.status === 'ready').length,
           processing: books.filter((b) => b.status === 'processing').length,
@@ -151,6 +154,17 @@ export function createAdminRouter(
       });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao carregar estatísticas.' });
+    }
+  });
+
+  // Get Storage status
+  router.get('/storage-status', async (_req: AuthenticatedRequest, res) => {
+    try {
+      const effectiveStorage = storageService || getStorageService();
+      const details = await effectiveStorage.getStorageDetails();
+      return res.json(details);
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao consultar status do storage.' });
     }
   });
 

@@ -33,9 +33,20 @@ export interface IDatabaseSnapshotStorage {
   syncDatabaseSnapshot(sourceLocalPath: string): Promise<void>;
 }
 
+export interface StorageDetails {
+  driver: 'gcs' | 'memory';
+  bucketName: string;
+  isHealthy: boolean;
+  pdfCount?: number;
+  coverCount?: number;
+  hasDbSnapshot?: boolean;
+  error?: string;
+}
+
 export interface IStorageService extends IBookAssetStorage, IDatabaseSnapshotStorage {
   isGcsEnabled(): boolean;
   getBucketName(): string;
+  getStorageDetails(): Promise<StorageDetails>;
 }
 
 function createLocalGcloudOAuthClient(): OAuth2Client {
@@ -346,6 +357,48 @@ export class GcsStorageService implements IStorageService {
       console.warn('Aviso ao verificar assets padrão no GCS:', err);
     }
   }
+
+  public async getStorageDetails(): Promise<StorageDetails> {
+    if (!this.bucket) {
+      return {
+        driver: 'gcs',
+        bucketName: this.bucketName,
+        isHealthy: false,
+        error: 'Cliente GCS não inicializado',
+      };
+    }
+    try {
+      const [exists] = await this.bucket.exists();
+      if (!exists) {
+        return {
+          driver: 'gcs',
+          bucketName: this.bucketName,
+          isHealthy: false,
+          error: `Bucket gs://${this.bucketName} não encontrado`,
+        };
+      }
+
+      const [pdfFiles] = await this.bucket.getFiles({ prefix: 'pdfs/', maxResults: 1000 });
+      const [coverFiles] = await this.bucket.getFiles({ prefix: 'covers/', maxResults: 1000 });
+      const [dbFileExists] = await this.bucket.file('db/library.sqlite').exists();
+
+      return {
+        driver: 'gcs',
+        bucketName: this.bucketName,
+        isHealthy: true,
+        pdfCount: pdfFiles.filter((f) => !f.name.endsWith('/')).length,
+        coverCount: coverFiles.filter((f) => !f.name.endsWith('/')).length,
+        hasDbSnapshot: dbFileExists,
+      };
+    } catch (err: any) {
+      return {
+        driver: 'gcs',
+        bucketName: this.bucketName,
+        isHealthy: false,
+        error: err?.message || 'Falha ao consultar GCS',
+      };
+    }
+  }
 }
 
 /**
@@ -451,6 +504,17 @@ export class InMemoryStorageService implements IStorageService {
     if (fs.existsSync(defaultCoverSource) && !this.covers.has(defaultCoverFilename)) {
       this.covers.set(defaultCoverFilename, await fsPromises.readFile(defaultCoverSource));
     }
+  }
+
+  public async getStorageDetails(): Promise<StorageDetails> {
+    return {
+      driver: 'memory',
+      bucketName: this.bucketName,
+      isHealthy: true,
+      pdfCount: this.pdfs.size,
+      coverCount: this.covers.size,
+      hasDbSnapshot: Boolean(this.dbSnapshot),
+    };
   }
 }
 
