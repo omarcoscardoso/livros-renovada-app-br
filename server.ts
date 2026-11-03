@@ -163,6 +163,33 @@ export function createApiApp(
     return res.status(404).json({ error: 'Arquivo PDF não encontrado.' });
   });
 
+  // PWA Service Worker with maximum root scope
+  app.get('/sw.js', (_req, res) => {
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    const swPath = isProduction
+      ? path.join(__dirname, 'dist', 'sw.js')
+      : path.join(__dirname, 'public', 'sw.js');
+    if (fs.existsSync(swPath)) {
+      return res.sendFile(swPath);
+    }
+    return res.status(404).end();
+  });
+
+  // PWA Web App Manifest
+  app.get(['/manifest.webmanifest', '/manifest.json'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    const manifestPath = isProduction
+      ? path.join(__dirname, 'dist', 'manifest.webmanifest')
+      : path.join(__dirname, 'public', 'manifest.webmanifest');
+    if (fs.existsSync(manifestPath)) {
+      return res.sendFile(manifestPath);
+    }
+    return res.status(404).end();
+  });
+
   // Explicit static serve for public/assets
   app.use(
     '/assets',

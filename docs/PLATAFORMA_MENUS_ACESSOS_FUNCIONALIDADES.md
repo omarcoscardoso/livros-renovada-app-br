@@ -375,6 +375,10 @@ O armazenamento de capas recortadas (`covers/`) e arquivos PDF brutos (`pdfs/`) 
 - `POST /api/assistant`: Envia pergunta do leitor com o contexto do capítulo para o mentor IA.
 - `POST /api/generate-lesson`: Gera roteiro completo de 90 minutos para estudo em células.
 
+### Módulo PWA & Infraestrutura Offline
+- `GET /manifest.webmanifest` / `/manifest.json`: Manifesto com metadados de instalação, ícones adaptativos e atalhos rápidos.
+- `GET /sw.js`: Service Worker com pré-cache de App Shell, revalidação em segundo plano e tolerância a falhas de rede.
+
 ---
 
 ## 6. Procedimentos de Operação e Deploy

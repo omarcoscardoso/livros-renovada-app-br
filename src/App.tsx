@@ -21,6 +21,8 @@ import { BookEditorModal } from './components/BookEditorModal';
 import { LoginModal } from './components/LoginModal';
 import { AdminScreen } from './components/AdminScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { PwaProvider } from './context/PwaContext';
+import { PwaInstallBanner } from './components/pwa/PwaInstallBanner';
 import { Loader2, Check, Sparkles } from 'lucide-react';
 import { Training, UserCertificate } from './types/training';
 import { LmsNavbar } from './components/lms/LmsNavbar';
@@ -1278,15 +1280,18 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AuthProvider
-        onProgressLoaded={(map) => {
-          if (progressLoadedCallback) {
-            progressLoadedCallback(map);
-          }
-        }}
-      >
-        <LibraryApp onRegisterProgressLoaded={handleRegisterProgressLoaded} />
-      </AuthProvider>
+      <PwaProvider>
+        <AuthProvider
+          onProgressLoaded={(map) => {
+            if (progressLoadedCallback) {
+              progressLoadedCallback(map);
+            }
+          }}
+        >
+          <LibraryApp onRegisterProgressLoaded={handleRegisterProgressLoaded} />
+          <PwaInstallBanner />
+        </AuthProvider>
+      </PwaProvider>
     </BrowserRouter>
   );
 }

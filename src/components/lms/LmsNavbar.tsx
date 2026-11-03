@@ -20,8 +20,11 @@ import {
   User as UserIcon,
   ChevronRight,
   TrendingUp,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { usePwa } from '../../context/PwaContext';
 import { Training } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
 
@@ -57,6 +60,7 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
   onToggleCollapse,
 }) => {
   const { user, isAdmin, openLoginModal, logout } = useAuth();
+  const { isInstallable, isInstalled, isIos, promptInstall } = usePwa();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -455,6 +459,26 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
                       </span>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                     </button>
+
+                    {(isInstallable || (!isInstalled && isIos)) && (
+                      <button
+                        onClick={() => {
+                          promptInstall();
+                          setShowUserDropdown(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                          isLight
+                            ? 'hover:bg-slate-100 text-slate-800'
+                            : 'hover:bg-slate-800/80 text-slate-200'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Smartphone className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Instalar Aplicativo (PWA)</span>
+                        </span>
+                        <Download className="w-3.5 h-3.5 text-amber-500" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Logout Button */}
@@ -474,13 +498,29 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
               )}
             </div>
           ) : (
-            <button
-              onClick={() => openLoginModal('Faça login com Google para salvar seu progresso nos treinamentos.')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold font-outfit text-xs shadow-md shadow-blue-900/40 transition-all cursor-pointer"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Entrar</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {isInstallable && !isInstalled && (
+                <button
+                  onClick={() => promptInstall()}
+                  className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold font-outfit border transition-all cursor-pointer ${
+                    isLight
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                      : 'bg-slate-800/90 hover:bg-slate-700 border-slate-700 text-slate-200'
+                  }`}
+                  title="Instalar Lumi no seu dispositivo"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Instalar App</span>
+                </button>
+              )}
+              <button
+                onClick={() => openLoginModal('Faça login com Google para salvar seu progresso nos treinamentos.')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold font-outfit text-xs shadow-md shadow-blue-900/40 transition-all cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Entrar</span>
+              </button>
+            </div>
           )}
         </div>
       </div>

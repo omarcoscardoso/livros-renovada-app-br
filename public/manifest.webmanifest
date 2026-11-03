@@ -1,0 +1,83 @@
+{
+  "id": "/",
+  "name": "Lumi - Plataforma Digital & Treinamentos",
+  "short_name": "Lumi",
+  "description": "Sua plataforma moderna de leitura digital, estudos bíblicos, células e treinamentos pastorais.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0F1224",
+  "theme_color": "#0F1224",
+  "categories": [
+    "books",
+    "education",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "/assets/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/maskable-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Biblioteca Digital",
+      "short_name": "Biblioteca",
+      "description": "Acessar acervo de livros digitais e capítulos",
+      "url": "/?view=bookshelf",
+      "icons": [
+        {
+          "src": "/assets/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "LMS & Treinamentos",
+      "short_name": "Treinamentos",
+      "description": "Acessar cursos, aulas e videoaulas",
+      "url": "/?view=lms-home",
+      "icons": [
+        {
+          "src": "/assets/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Meu Aprendizado",
+      "short_name": "Meu Perfil",
+      "description": "Ver cursos matriculados, métricas e certificados",
+      "url": "/?view=user-profile",
+      "icons": [
+        {
+          "src": "/assets/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

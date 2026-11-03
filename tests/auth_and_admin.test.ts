@@ -483,4 +483,23 @@ describe('Segurança, Autenticação Google e Administração', () => {
     expect(details.pdfCount).toBe(1);
     expect(details.coverCount).toBe(1);
   });
+
+  it('deve validar estrutura do Web App Manifest e rotas PWA', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const manifestPath = path.join(process.cwd(), 'public', 'manifest.webmanifest');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+
+    const manifestContent = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifestContent.name).toBe('Lumi - Plataforma Digital & Treinamentos');
+    expect(manifestContent.short_name).toBe('Lumi');
+    expect(manifestContent.display).toBe('standalone');
+    expect(manifestContent.icons.length).toBeGreaterThanOrEqual(3);
+
+    const swPath = path.join(process.cwd(), 'public', 'sw.js');
+    expect(fs.existsSync(swPath)).toBe(true);
+    const swContent = fs.readFileSync(swPath, 'utf-8');
+    expect(swContent).toMatch(/CACHE_VERSION/);
+    expect(swContent).toMatch(/self\.skipWaiting\(\)/);
+  });
 });
