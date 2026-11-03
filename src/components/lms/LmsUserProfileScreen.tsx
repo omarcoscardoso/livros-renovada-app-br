@@ -26,8 +26,12 @@ import {
   Search,
   ChevronRight,
   ExternalLink,
+  Smartphone,
+  Download,
+  WifiOff,
 } from 'lucide-react';
 import { useAuth, User } from '../../context/AuthContext';
+import { usePwa } from '../../context/PwaContext';
 import { Training, UserCertificate } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
 import { CertificatePreviewModal } from './admin/modals/CertificatePreviewModal';
@@ -48,6 +52,7 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
   theme = 'dark',
 }) => {
   const { user, isAdmin, updateProfile, logout } = useAuth();
+  const { isInstallable, isInstalled, isIos, isOffline, promptInstall } = usePwa();
   const isLight = theme === 'light';
 
   // Navigation tab inside Profile Screen
@@ -1182,6 +1187,63 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Progressive Web App (PWA) Card */}
+          <div
+            className={`p-6 sm:p-8 rounded-3xl border shadow-xl ${
+              isLight
+                ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50'
+                : 'bg-[#171B38] border-slate-700/80 text-white'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#FE6E27] to-[#FF9F25] p-2 flex items-center justify-center shrink-0 shadow-md shadow-[#FE6E27]/30 text-white">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-outfit font-bold text-base">Aplicativo Lumi (PWA)</h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Instale no seu celular, tablet ou computador para leitura em tela cheia e acesso offline.
+                  </p>
+                </div>
+              </div>
+
+              {isInstalled ? (
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Instalado
+                </span>
+              ) : isInstallable ? (
+                <button
+                  onClick={() => promptInstall()}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-[#FE6E27] hover:brightness-110 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Instalar App</span>
+                </button>
+              ) : isIos ? (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">
+                  Compatível com Safari
+                </span>
+              ) : (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-white/5 text-slate-400 border border-white/10 shrink-0">
+                  Suportado
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-current/10 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-400">
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-400 font-bold">•</span>
+                <span><strong>Suporte Offline:</strong> Os capítulos e cursos navegados são salvos em cache para acesso sem internet.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">•</span>
+                <span><strong>Ícone na Tela Inicial:</strong> Abra diretamente sem barras do navegador, com máxima imersão.</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

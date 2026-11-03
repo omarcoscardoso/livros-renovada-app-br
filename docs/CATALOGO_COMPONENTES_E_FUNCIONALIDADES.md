@@ -320,3 +320,26 @@ O painel administrativo do LMS adota o **Princípio da Responsabilidade Única (
 3. **Integridade de Código e Tipagem**:
    - 100% de cobertura com tipos TypeScript rígidos (`npx tsc --noEmit` sem erros).
    - Suíte de testes automatizados com Vitest cobrindo fluxos de ponta a ponta.
+
+---
+
+## 5. Progressive Web App (PWA) & Capacidades Offline
+
+A aplicação Lumi é um **Progressive Web App (PWA)** instalável em smartphones (Android/iOS), tablets e computadores desktop (Chrome/Edge/Safari), com suporte a execução standalone em tela cheia e tolerância a falhas de rede.
+
+### 5.1. Componentes do Ecossistema PWA
+
+1. **Manifesto da Aplicação (`public/manifest.webmanifest` / `manifest.json`)**:
+   - Configura nome, ícones adaptativos (192x192, 512x512, maskable com safe zone de 20%), cor tema (`#0F1224`), orientação e modo de exibição `standalone`.
+   - Atalhos rápidos configurados para navegação direta na Biblioteca Digital, LMS Treinamentos e Painel do Aluno.
+2. **Service Worker (`public/sw.js`)**:
+   - **Pre-caching de App Shell**: Armazena no cache inicial a casca da aplicação (`/`, `/index.html`, ícones e fontes essenciais).
+   - **Stale-While-Revalidate**: Entrega instantaneamente scripts, folhas de estilo e imagens, revalidando em segundo plano.
+   - **Network-First com Fallback Offline**: Requisições de leitura de livros (`/api/books`) e treinamentos (`/api/trainings`) tentam a rede primeiro e, caso o usuário esteja sem conexão, servem os dados salvos em cache local.
+   - **Ciclo de Vida Controlado**: Escuta o evento `SKIP_WAITING` para atualização sem travamentos e reivindicação imediata de clientes (`clients.claim()`).
+3. **Gerenciador de Estado PWA (`src/context/PwaContext.tsx`)**:
+   - Detecta eventos `beforeinstallprompt`, status de conexão (`online`/`offline`), modo standalone (`display-mode: standalone`) e disponibilidade de nova versão do Service Worker.
+4. **Interface e Banners de Instalação (`src/components/pwa/PwaInstallBanner.tsx`)**:
+   - Notificação discreta de modo offline quando a conexão cai.
+   - Aviso com botão de atualização em um clique quando uma nova versão da plataforma é disponibilizada.
+   - Banner de instalação para dispositivos Android e computadores, além de guia passo a passo para usuários de Safari no iOS.
