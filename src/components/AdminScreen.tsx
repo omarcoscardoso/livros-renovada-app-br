@@ -23,6 +23,8 @@ import {
   Award,
   Copy,
   Terminal,
+  Cloud,
+  Database,
 } from 'lucide-react';
 import { BookSummary } from '../data/bookTypes';
 import { ReaderTheme } from './Navbar';
@@ -55,6 +57,15 @@ interface AdminStats {
   totalUsers: number;
   adminCount: number;
   hasGeminiKey: boolean;
+  storage?: {
+    driver: 'gcs' | 'memory';
+    bucketName: string;
+    isHealthy: boolean;
+    pdfCount?: number;
+    coverCount?: number;
+    hasDbSnapshot?: boolean;
+    error?: string;
+  };
   booksByStatus: {
     ready: number;
     processing: number;
@@ -536,7 +547,7 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
             }`}
           >
             <KeyRound className="w-4 h-4" />
-            <span>Configurações Gemini AI</span>
+            <span>Configurações & Cloud Storage</span>
             {apiKeyStatus.isConfigured ? (
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
             ) : (
@@ -1165,6 +1176,79 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
                 <pre className="p-3 rounded-xl bg-black/80 text-emerald-400 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all">
                   npm run import:books -- --dir /caminho/calibre --key {adminKeyStatus.apiKey || adminKeyStatus.maskedKey || 'SUA_CHAVE_ADMIN'}
                 </pre>
+              </div>
+            </div>
+
+            {/* Divisor */}
+            <hr className={isDark ? 'border-slate-800' : isSepia ? 'border-[#E3DAC7]' : 'border-slate-200'} />
+
+            {/* Armazenamento em Nuvem (Google Cloud Storage) */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Cloud className="w-4 h-4 text-sky-500" />
+                  <h3 className="text-base sm:text-lg font-bold font-editorial">
+                    Armazenamento em Nuvem (Google Cloud Storage)
+                  </h3>
+                </div>
+                <p className={`text-xs ${mutedText} mt-1`}>
+                  Todos os arquivos PDF de livros, capas renderizadas e o banco de dados da biblioteca são persistidos diretamente no Google Cloud Storage (GCS).
+                </p>
+              </div>
+
+              <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${subCardBg}`}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        stats?.storage?.isHealthy
+                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                          : 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                      }`}
+                    >
+                      <Cloud className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold flex items-center gap-2">
+                        Status: {stats?.storage?.isHealthy ? 'Conectado e Operacional' : 'Atenção / Offline'}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20 font-mono">
+                          {stats?.storage?.driver === 'gcs' ? 'GCS Multi-Region' : 'In-Memory Test'}
+                        </span>
+                      </p>
+                      <p className={`text-[11px] font-mono ${mutedText}`}>
+                        Bucket: gs://{stats?.storage?.bucketName || 'livros-renovada-app-br'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/60">
+                  <div className="p-2.5 rounded-xl bg-black/5 dark:bg-white/5 flex flex-col">
+                    <span className={`text-[10px] font-medium ${mutedText}`}>PDFs no Storage</span>
+                    <span className="text-sm font-bold font-mono text-sky-500">
+                      {stats?.storage?.pdfCount ?? '—'} arquivos
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/5 dark:bg-white/5 flex flex-col">
+                    <span className={`text-[10px] font-medium ${mutedText}`}>Capas no Storage</span>
+                    <span className="text-sm font-bold font-mono text-emerald-500">
+                      {stats?.storage?.coverCount ?? '—'} imagens
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/5 dark:bg-white/5 flex flex-col">
+                    <span className={`text-[10px] font-medium ${mutedText}`}>Backup DB SQLite</span>
+                    <span className="text-sm font-bold font-mono text-amber-500 flex items-center gap-1">
+                      <Database className="w-3 h-3" />
+                      {stats?.storage?.hasDbSnapshot ? 'Sincronizado' : 'Ativo'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-1">
+                  <p>• <strong>PDFs:</strong> Salvos em <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">gs://{stats?.storage?.bucketName || 'livros-renovada-app-br'}/pdfs/</code> com cache público de 24h.</p>
+                  <p>• <strong>Capas:</strong> Salvas em <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">gs://{stats?.storage?.bucketName || 'livros-renovada-app-br'}/covers/</code> com compressão PNG otimizada.</p>
+                  <p>• <strong>Banco de Dados:</strong> Snapshot atômico salvo em <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">gs://{stats?.storage?.bucketName || 'livros-renovada-app-br'}/db/library.sqlite</code> a cada modificação.</p>
+                </div>
               </div>
             </div>
           </div>

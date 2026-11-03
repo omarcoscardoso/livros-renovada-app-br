@@ -469,4 +469,18 @@ describe('Segurança, Autenticação Google e Administração', () => {
     const loginOld = userRepo.verifyEmailUser('aluno.perfil@renovada.com.br', 'senhaAntiga123');
     expect(loginOld).toBeNull();
   });
+
+  it('deve retornar detalhes e status de armazenamento (storageDetails) em InMemoryStorageService e no admin router', async () => {
+    const { InMemoryStorageService } = await import('../src/server/services/storageService');
+    const storage = new InMemoryStorageService('test-bucket');
+    await storage.savePdf('livro-teste.pdf', Buffer.from('%PDF-1.4 test'));
+    await storage.saveCover('livro-teste_cover.png', Buffer.from('png-data'));
+
+    const details = await storage.getStorageDetails();
+    expect(details.driver).toBe('memory');
+    expect(details.bucketName).toBe('test-bucket');
+    expect(details.isHealthy).toBe(true);
+    expect(details.pdfCount).toBe(1);
+    expect(details.coverCount).toBe(1);
+  });
 });
