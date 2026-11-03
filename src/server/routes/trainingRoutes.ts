@@ -79,6 +79,56 @@ export function createTrainingRouter(
     }
   });
 
+  // 1f. Student: Get enrolled trainings, learning metrics and certificates for logged in user
+  router.get('/my-learning', auth.requireAuth, (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const allTrainings = repo.getAllTrainings(userId, undefined, undefined, false);
+      const enrolledTrainings = allTrainings.filter(
+        (t) =>
+          Boolean(t.isCompleted) ||
+          (t.completedLessonsCount !== undefined && t.completedLessonsCount > 0) ||
+          (t.progressPercent !== undefined && t.progressPercent > 0)
+      );
+      const certificates = repo.getUserCertificates(userId);
+
+      const completedTrainings = allTrainings.filter((t) => Boolean(t.isCompleted));
+      const totalLessonsCompleted = enrolledTrainings.reduce(
+        (acc, t) => acc + (t.completedLessonsCount || 0),
+        0
+      );
+      const totalHoursCompleted = completedTrainings.reduce(
+        (acc, t) => acc + (t.workloadHours || 0),
+        0
+      );
+      const averageProgress =
+        enrolledTrainings.length > 0
+          ? Math.round(
+              enrolledTrainings.reduce((acc, t) => acc + (t.progressPercent || 0), 0) /
+                enrolledTrainings.length
+            )
+          : 0;
+
+      res.json({
+        success: true,
+        enrolledTrainings,
+        allTrainings,
+        certificates,
+        metrics: {
+          enrolledCount: enrolledTrainings.length,
+          completedCount: completedTrainings.length,
+          totalLessonsCompleted,
+          totalHoursCompleted,
+          certificatesCount: certificates.length,
+          averageProgress,
+        },
+      });
+    } catch (err: any) {
+      console.error('[Trainings] Erro ao obter dados de aprendizado do aluno:', err);
+      res.status(500).json({ error: 'Falha ao buscar dados de aprendizado.' });
+    }
+  });
+
   // 2. Get training details by ID (including lessons and progress - Requires authenticated student; drafts visible only to admin)
   router.get('/:id', auth.requireAuth, (req: any, res) => {
     try {

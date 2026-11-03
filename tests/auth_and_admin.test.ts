@@ -383,4 +383,90 @@ describe('Segurança, Autenticação Google e Administração', () => {
     expect(authRateLimiter).toBeDefined();
     expect(typeof authRateLimiter).toBe('function');
   });
+
+  it('deve permitir ao aluno atualizar seu próprio perfil e senha via PUT /profile com validação de senha atual', async () => {
+    const student = userRepo.registerEmailUser('aluno.perfil@renovada.com.br', 'Aluno Original', 'senhaAntiga123');
+    const { createAuthRouter } = await import('../src/server/routes/authRoutes');
+    const authRouter = createAuthRouter(userRepo);
+
+    const profileLayer = authRouter.stack.find(
+      (layer: any) => layer.route?.path === '/profile' && layer.route?.methods?.put
+    );
+    expect(profileLayer).toBeDefined();
+
+    // 1. Atualizar nome e foto com sucesso
+    let resData: any = null;
+    let resCode = 200;
+    const mockReq: any = {
+      user: student,
+      body: { name: 'Aluno Nome Atualizado', picture: 'https://example.com/nova-foto.jpg' },
+    };
+    const mockRes: any = {
+      status: (c: number) => {
+        resCode = c;
+        return mockRes;
+      },
+      json: (d: any) => {
+        resData = d;
+        return d;
+      },
+    };
+
+    const noop = () => {};
+    profileLayer.route.stack[0].handle(mockReq, mockRes, noop);
+    expect(resCode).toBe(200);
+    expect(resData.success).toBe(true);
+    expect(resData.user.name).toBe('Aluno Nome Atualizado');
+    expect(resData.user.picture).toBe('https://example.com/nova-foto.jpg');
+
+    // 2. Rejeitar alteração de senha se a senha atual estiver incorreta
+    let errorResCode = 200;
+    let errorResData: any = null;
+    const mockReqWrongPwd: any = {
+      user: student,
+      body: { currentPassword: 'senhaIncorreta', newPassword: 'novaSenha123' },
+    };
+    const mockResWrong: any = {
+      status: (c: number) => {
+        errorResCode = c;
+        return mockResWrong;
+      },
+      json: (d: any) => {
+        errorResData = d;
+        return d;
+      },
+    };
+
+    profileLayer.route.stack[0].handle(mockReqWrongPwd, mockResWrong, noop);
+    expect(errorResCode).toBe(400);
+    expect(errorResData.error).toMatch(/A senha atual está incorreta/);
+
+    // 3. Atualizar senha com sucesso quando a senha atual for informada corretamente
+    let pwdResCode = 200;
+    let pwdResData: any = null;
+    const mockReqValidPwd: any = {
+      user: student,
+      body: { currentPassword: 'senhaAntiga123', newPassword: 'novaSenhaForte456' },
+    };
+    const mockResValid: any = {
+      status: (c: number) => {
+        pwdResCode = c;
+        return mockResValid;
+      },
+      json: (d: any) => {
+        pwdResData = d;
+        return d;
+      },
+    };
+
+    profileLayer.route.stack[0].handle(mockReqValidPwd, mockResValid, noop);
+    expect(pwdResCode).toBe(200);
+    expect(pwdResData.success).toBe(true);
+
+    // Validar autenticação com nova senha
+    const loginNew = userRepo.verifyEmailUser('aluno.perfil@renovada.com.br', 'novaSenhaForte456');
+    expect(loginNew).not.toBeNull();
+    const loginOld = userRepo.verifyEmailUser('aluno.perfil@renovada.com.br', 'senhaAntiga123');
+    expect(loginOld).toBeNull();
+  });
 });

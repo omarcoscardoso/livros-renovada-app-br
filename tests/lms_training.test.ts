@@ -1181,5 +1181,67 @@ describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
       expect(childAfter?.prerequisiteTrainingId).toBeNull();
       expect(childAfter?.prerequisiteTrainingTitle).toBeNull();
     });
+
+    it('deve retornar métricas de aprendizado, cursos matriculados e certificados do aluno via GET /my-learning', () => {
+      const studentId = 'user-student-learning-test';
+      const trainingRouter = createTrainingRouter(repo, {
+        requireAuth: (req: any, _res: any, next: any) => {
+          req.user = { id: studentId, name: 'Aluno Estudioso', role: 'user' };
+          next();
+        },
+        requireAdmin: (_req: any, _res: any, next: any) => next(),
+      });
+
+      // 1. Criar um treinamento com 2 aulas
+      const course = repo.createTraining({
+        title: 'Curso de Crescimento Espiritual',
+        category: 'Discipulado',
+        workloadHours: 3,
+      });
+      const l1 = repo.addLesson(course.id, { title: 'Aula 1', durationMinutes: 20 });
+      const l2 = repo.addLesson(course.id, { title: 'Aula 2', durationMinutes: 25 });
+
+      // 2. Aluno assiste apenas à Aula 1 (50% de progresso)
+      repo.toggleLessonProgress(studentId, course.id, l1.id, 'Aluno Estudioso');
+
+      // 3. Buscar camada da rota /my-learning
+      const myLearningLayer = trainingRouter.stack.find(
+        (layer: any) => layer.route?.path === '/my-learning' && layer.route?.methods?.get
+      );
+      expect(myLearningLayer).toBeDefined();
+
+      let resCode = 200;
+      let resData: any = null;
+      const mockReq: any = { user: { id: studentId, name: 'Aluno Estudioso', role: 'user' } };
+      const mockRes: any = {
+        status: (c: number) => { resCode = c; return mockRes; },
+        json: (d: any) => { resData = d; return d; },
+      };
+
+      const noop = () => {};
+      myLearningLayer.route.stack[myLearningLayer.route.stack.length - 1].handle(mockReq, mockRes, noop);
+      expect(resCode).toBe(200);
+      expect(resData.success).toBe(true);
+
+      // Métricas com 1 curso em andamento
+      expect(resData.metrics.enrolledCount).toBe(1);
+      expect(resData.metrics.completedCount).toBe(0);
+      expect(resData.metrics.totalLessonsCompleted).toBe(1);
+      expect(resData.metrics.averageProgress).toBe(50);
+      expect(resData.enrolledTrainings.length).toBe(1);
+      expect(resData.enrolledTrainings[0].id).toBe(course.id);
+      expect(resData.certificates.length).toBe(0);
+
+      // 4. Conclui a Aula 2 (100% de progresso -> Certificado emitido)
+      repo.toggleLessonProgress(studentId, course.id, l2.id, 'Aluno Estudioso');
+
+      myLearningLayer.route.stack[myLearningLayer.route.stack.length - 1].handle(mockReq, mockRes, noop);
+      expect(resData.metrics.completedCount).toBe(1);
+      expect(resData.metrics.totalLessonsCompleted).toBe(2);
+      expect(resData.metrics.totalHoursCompleted).toBe(3);
+      expect(resData.metrics.certificatesCount).toBe(1);
+      expect(resData.certificates.length).toBe(1);
+      expect(resData.certificates[0].trainingTitle).toBe('Curso de Crescimento Espiritual');
+    });
   });
 });
