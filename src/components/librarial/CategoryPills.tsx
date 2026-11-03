@@ -17,13 +17,11 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
   const isDark = theme === 'dark' || theme === 'contrast';
   const isSepia = theme === 'sepia';
 
-  const pillActive = 'bg-[#5C6BC0] text-white font-bold shadow-md shadow-[#5C6BC0]/25';
+  const pillActive =
+    'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold font-outfit shadow-lg shadow-emerald-500/25 border border-emerald-400/40 scale-105';
 
-  const pillInactive = isDark
-    ? 'bg-[#18181B] text-neutral-300 border border-neutral-800 hover:border-neutral-700'
-    : isSepia
-    ? 'bg-[#FBF0D9] text-[#5F4B32] border border-[#E8DCBF] hover:border-[#5C6BC0]/50'
-    : 'bg-white text-slate-600 border border-slate-200/90 hover:border-slate-300';
+  const pillInactive =
+    'bg-[#171B38] text-slate-300 border border-slate-700/60 hover:border-slate-500 hover:text-white backdrop-blur-md font-outfit font-medium';
 
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -33,7 +31,7 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
           <button
             key={cat}
             onClick={() => onSelectCategory(cat)}
-            className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-xs whitespace-nowrap transition-all duration-200 cursor-pointer ${
               isSelected ? pillActive : pillInactive
             }`}
           >

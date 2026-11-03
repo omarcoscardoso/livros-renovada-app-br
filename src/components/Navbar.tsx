@@ -47,19 +47,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isSepia = theme === 'sepia';
 
   const navBg = isDark
-    ? 'bg-[#0d1117]/90 border-slate-800 text-slate-300'
+    ? 'bg-[#0F1224]/90 border-slate-800/80 text-slate-200 backdrop-blur-xl'
     : isSepia
-    ? 'bg-[#f7f3e8]/90 border-[#e3dac7] text-[#42362b]'
-    : 'bg-white/90 border-slate-200 text-slate-700';
+    ? 'bg-[#f7f3e8]/90 border-[#e3dac7] text-[#42362b] backdrop-blur-xl'
+    : 'bg-white/90 border-slate-200 text-slate-700 backdrop-blur-xl';
 
   const pillActive = isDark
-    ? 'bg-amber-500/20 text-amber-300 font-semibold'
+    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950/40'
     : isSepia
     ? 'bg-[#d8c7a7] text-[#2c2217] font-semibold'
     : 'bg-slate-900 text-white font-semibold';
 
   const pillInactive = isDark
-    ? 'text-slate-400 hover:text-slate-200'
+    ? 'text-slate-400 hover:text-slate-100'
     : isSepia
     ? 'text-[#705e4d] hover:text-[#2c2217]'
     : 'text-slate-500 hover:text-slate-900';
@@ -81,12 +81,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <span className="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline">|</span>
 
-        <div className="truncate flex items-center gap-1.5 text-xs sm:text-sm font-medium font-editorial">
-          <span className="opacity-75 truncate max-w-[120px] sm:max-w-[200px] md:max-w-[320px]" title={bookTitle}>
+        <div className="truncate flex items-center gap-1.5 text-xs sm:text-sm font-semibold font-outfit">
+          <span className="hidden sm:inline opacity-75 truncate max-w-[200px] md:max-w-[320px]" title={bookTitle}>
             {bookTitle}
           </span>
-          <span className="opacity-40">•</span>
-          <span className="truncate max-w-[130px] sm:max-w-[220px] md:max-w-[320px]" title={chapterTitle}>
+          <span className="hidden sm:inline opacity-40">•</span>
+          <span className="truncate max-w-[180px] sm:max-w-[220px] md:max-w-[320px]" title={chapterTitle}>
             {chapterTitle}
           </span>
         </div>

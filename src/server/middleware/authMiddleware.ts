@@ -95,6 +95,12 @@ export function createAuthMiddleware(
         requiresLogin: true,
       });
     }
+    if (req.user.isBlocked) {
+      return res.status(403).json({
+        error: 'Esta conta de usuário foi bloqueada pela administração.',
+        isBlocked: true,
+      });
+    }
     next();
   };
 
@@ -103,6 +109,12 @@ export function createAuthMiddleware(
       return res.status(401).json({
         error: 'Autenticação necessária. Faça login com sua conta Google ou utilize uma chave de API válida.',
         requiresLogin: true,
+      });
+    }
+    if (req.user.isBlocked) {
+      return res.status(403).json({
+        error: 'Esta conta de usuário foi bloqueada pela administração.',
+        isBlocked: true,
       });
     }
     if (req.user.role !== 'admin') {

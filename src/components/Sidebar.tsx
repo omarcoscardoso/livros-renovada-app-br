@@ -23,6 +23,7 @@ interface SidebarProps {
   onOpenSearch: () => void;
   onOpenPdf: () => void;
   onOpenLibrary: () => void;
+  onOpenLms?: () => void;
   onOpenUpload: () => void;
   onOpenEditor: () => void;
   readChapters: string[];
@@ -39,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleChapterRead,
   onOpenSearch,
   onOpenLibrary,
+  onOpenLms,
   onOpenUpload,
   onOpenEditor,
   readChapters,
@@ -96,23 +98,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-40 w-72 bg-[#0F1224] border-r border-slate-800/80 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Header: Current Book Info + Edit button */}
-        <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
+        <div className="p-4 border-b border-slate-800/80 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-0.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold font-outfit uppercase tracking-wider text-emerald-400 mb-0.5">
               <span>Livro em Leitura</span>
             </div>
             <h1
-              className="text-sm font-semibold text-slate-100 font-display tracking-wide truncate"
+              className="text-sm font-bold text-slate-100 font-outfit tracking-wide truncate"
               title={book.titlePt}
             >
               {book.titlePt}
             </h1>
-            <p className="text-[11px] text-slate-400 font-editorial truncate">
+            <p className="text-[11px] text-slate-400 font-sans truncate">
               {book.author} • {book.originalYear}
             </p>
           </div>
@@ -120,14 +122,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={handleEditWithAuth}
-              className="p-1.5 rounded-md text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-white/5 transition-colors cursor-pointer"
               title="Editar metadados e capítulos deste livro"
             >
               <Edit3 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-200 lg:hidden cursor-pointer"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-200 lg:hidden cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -189,14 +191,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onSelectChapter('__cover__');
               onClose();
             }}
-            className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center gap-2.5 mb-1 ${
+            className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-2.5 mb-1 ${
               currentChapterId === '__cover__'
-                ? 'bg-amber-500/15 text-amber-300 font-semibold'
-                : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
+                ? 'bg-emerald-500/15 text-emerald-300 font-bold border-l-2 border-emerald-400 pl-2.5'
+                : 'text-slate-300 hover:bg-white/5 hover:text-slate-100'
             }`}
           >
             <div className="shrink-0 p-0.5">
-              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
             </div>
             <div className="truncate flex-1">Capa & Folha de Rosto</div>
           </button>
@@ -212,10 +214,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onSelectChapter(ch.id);
                   onClose();
                 }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center gap-2.5 ${
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-2.5 ${
                   isActive
-                    ? 'bg-amber-500/15 text-amber-300 font-semibold'
-                    : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
+                    ? 'bg-emerald-500/15 text-emerald-300 font-bold border-l-2 border-emerald-400 pl-2.5'
+                    : 'text-slate-300 hover:bg-white/5 hover:text-slate-100'
                 }`}
               >
                 <div

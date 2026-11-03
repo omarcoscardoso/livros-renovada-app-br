@@ -9,6 +9,10 @@ export interface User {
   role: 'admin' | 'user';
   isBlocked: boolean;
   createdAt: string;
+  updatedAt?: string;
+  enrollmentsCount?: number;
+  completedCount?: number;
+  certificatesCount?: number;
 }
 
 interface AuthContextType {
@@ -20,6 +24,8 @@ interface AuthContextType {
   openLoginModal: (message?: string) => void;
   closeLoginModal: () => void;
   loginWithGoogleCredential: (credential: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  registerWithEmail: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   syncReadingProgressToAccount: (
     bookId: string,
@@ -115,6 +121,58 @@ export const AuthProvider: React.FC<{
     }
   };
 
+  const loginWithEmail = async (email: string, password: string) => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Falha ao autenticar com e-mail e senha.' };
+      }
+
+      setUser(data.user);
+      if (data.readingProgress && onProgressLoaded) {
+        const remoteMap: ReadChaptersMap = {};
+        for (const [bookId, p] of Object.entries(data.readingProgress as Record<string, any>)) {
+          if (Array.isArray(p.readChapters)) {
+            remoteMap[bookId] = p.readChapters;
+          }
+        }
+        onProgressLoaded(remoteMap);
+      }
+
+      closeLoginModal();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro de conexão com o servidor.' };
+    }
+  };
+
+  const registerWithEmail = async (name: string, email: string, password: string) => {
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Falha ao realizar cadastro.' };
+      }
+
+      setUser(data.user);
+      closeLoginModal();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro de conexão com o servidor.' };
+    }
+  };
+
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
@@ -151,6 +209,8 @@ export const AuthProvider: React.FC<{
         openLoginModal,
         closeLoginModal,
         loginWithGoogleCredential,
+        loginWithEmail,
+        registerWithEmail,
         logout,
         syncReadingProgressToAccount,
       }}

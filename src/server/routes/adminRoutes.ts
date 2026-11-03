@@ -74,6 +74,63 @@ export function createAdminRouter(
     }
   });
 
+  // Edit user profile & credentials (name, email, password, role)
+  router.put('/users/:id', (req: AuthenticatedRequest, res) => {
+    try {
+      const { name, email, password, role } = req.body;
+
+      if (req.user?.id === req.params.id && role && role !== 'admin') {
+        return res.status(400).json({ error: 'Você não pode revogar seu próprio papel de administrador.' });
+      }
+
+      if (password && (typeof password !== 'string' || password.trim().length < 6)) {
+        return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+      }
+
+      if (email) {
+        const cleanEmail = String(email).trim().toLowerCase();
+        const existingWithEmail = userRepo.getUserByEmail(cleanEmail);
+        if (existingWithEmail && existingWithEmail.id !== req.params.id) {
+          return res.status(400).json({ error: 'Já existe outro usuário com este endereço de e-mail.' });
+        }
+      }
+
+      const success = userRepo.updateUserProfileAndAuth(req.params.id, {
+        name: typeof name === 'string' ? name.trim() : undefined,
+        email: typeof email === 'string' ? email.trim() : undefined,
+        password: typeof password === 'string' && password.trim().length >= 6 ? password.trim() : undefined,
+        role: role === 'admin' || role === 'user' ? role : undefined,
+      });
+
+      if (!success) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+
+      const updated = userRepo.getUserById(req.params.id);
+      return res.json({ success: true, user: updated });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao atualizar dados do usuário.' });
+    }
+  });
+
+  // Delete user account permanently
+  router.delete('/users/:id', (req: AuthenticatedRequest, res) => {
+    try {
+      if (req.user?.id === req.params.id) {
+        return res.status(400).json({ error: 'Você não pode excluir sua própria conta de administrador.' });
+      }
+
+      const success = userRepo.deleteUser(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+
+      return res.json({ success: true, message: 'Usuário excluído com sucesso.' });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao excluir usuário.' });
+    }
+  });
+
   // Get Admin statistics
   router.get('/stats', (_req: AuthenticatedRequest, res) => {
     try {
