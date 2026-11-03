@@ -184,6 +184,65 @@ export function createAuthRouter(userRepo: IUserRepository): Router {
     return res.json({ user: req.user, readingProgress });
   });
 
+  // Update own user profile and password
+  router.put('/profile', (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Usuário não autenticado.' });
+      }
+
+      const { name, picture, currentPassword, newPassword } = req.body;
+
+      if (name !== undefined && (typeof name !== 'string' || name.trim().length < 2)) {
+        return res.status(400).json({ error: 'O nome completo deve conter pelo menos 2 caracteres.' });
+      }
+
+      const currentUser = userRepo.getUserById(req.user.id);
+      if (!currentUser) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+
+      if (newPassword !== undefined && newPassword !== '') {
+        if (typeof newPassword !== 'string' || newPassword.length < 6) {
+          return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+        }
+
+        // Check if user already has a password set (e.g. registered with email/password)
+        // If yes, verify current password
+        const rawDb = (userRepo as any).db;
+        const row = rawDb?.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id) as
+          | { password_hash?: string }
+          | undefined;
+
+        if (row?.password_hash) {
+          if (!currentPassword || typeof currentPassword !== 'string') {
+            return res.status(400).json({ error: 'Informe a senha atual para definir uma nova senha.' });
+          }
+          const verified = userRepo.verifyEmailUser(currentUser.email, currentPassword);
+          if (!verified) {
+            return res.status(400).json({ error: 'A senha atual está incorreta.' });
+          }
+        }
+      }
+
+      const updateData: { name?: string; picture?: string; password?: string } = {};
+      if (name !== undefined) updateData.name = name.trim();
+      if (picture !== undefined) updateData.picture = picture;
+      if (newPassword && newPassword.trim().length >= 6) updateData.password = newPassword.trim();
+
+      const success = userRepo.updateUserProfileAndAuth(req.user.id, updateData);
+      if (!success) {
+        return res.status(500).json({ error: 'Falha ao atualizar dados do perfil.' });
+      }
+
+      const updatedUser = userRepo.getUserById(req.user.id);
+      return res.json({ success: true, user: updatedUser });
+    } catch (err: any) {
+      console.error('[Auth] Erro ao atualizar perfil:', err);
+      return res.status(500).json({ error: err?.message || 'Falha ao atualizar perfil.' });
+    }
+  });
+
   // Logout
   router.post('/logout', (req: AuthenticatedRequest, res) => {
     const token =

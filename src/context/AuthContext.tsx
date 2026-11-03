@@ -27,6 +27,12 @@ interface AuthContextType {
   loginWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   registerWithEmail: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  updateProfile: (data: {
+    name?: string;
+    currentPassword?: string;
+    newPassword?: string;
+    picture?: string;
+  }) => Promise<{ success: boolean; error?: string; user?: User }>;
   syncReadingProgressToAccount: (
     bookId: string,
     lastChapterId?: string,
@@ -182,6 +188,32 @@ export const AuthProvider: React.FC<{
     setUser(null);
   };
 
+  const updateProfile = async (data: {
+    name?: string;
+    currentPassword?: string;
+    newPassword?: string;
+    picture?: string;
+  }): Promise<{ success: boolean; error?: string; user?: User }> => {
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        return { success: false, error: resData.error || 'Erro ao atualizar dados do perfil.' };
+      }
+      if (resData.user) {
+        setUser(resData.user);
+      }
+      return { success: true, user: resData.user };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro de comunicação ao atualizar perfil.' };
+    }
+  };
+
   const syncReadingProgressToAccount = useCallback(
     async (bookId: string, lastChapterId?: string, readChapters?: string[]) => {
       if (!user) return;
@@ -212,6 +244,7 @@ export const AuthProvider: React.FC<{
         loginWithEmail,
         registerWithEmail,
         logout,
+        updateProfile,
         syncReadingProgressToAccount,
       }}
     >

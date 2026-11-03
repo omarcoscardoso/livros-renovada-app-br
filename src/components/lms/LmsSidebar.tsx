@@ -11,11 +11,12 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  User as UserIcon,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ReaderTheme } from '../Navbar';
 
-export type LmsNavTab = 'home' | 'bookmarks' | 'bookshelf' | 'certificates' | 'admin';
+export type LmsNavTab = 'home' | 'bookmarks' | 'bookshelf' | 'certificates' | 'profile' | 'admin';
 
 interface LmsSidebarProps {
   isOpen: boolean;
@@ -53,6 +54,7 @@ export const LmsSidebar: React.FC<LmsSidebarProps> = ({
       icon: Award,
       badge: certificatesCount > 0 ? certificatesCount : undefined,
     },
+    { id: 'profile', label: 'Meu Perfil & Aluno', icon: UserIcon },
   ];
 
   if (isAdmin) {

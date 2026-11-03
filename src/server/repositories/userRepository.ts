@@ -51,7 +51,7 @@ export interface IUserRepository {
   setUserBlocked(id: string, isBlocked: boolean): boolean;
   updateUserProfileAndAuth(
     id: string,
-    data: { name?: string; email?: string; password?: string; role?: 'admin' | 'user' }
+    data: { name?: string; email?: string; password?: string; picture?: string; role?: 'admin' | 'user' }
   ): boolean;
   deleteUser(id: string): boolean;
   createSession(userId: string, ttlDays?: number): string;
@@ -264,7 +264,7 @@ export class SqliteUserRepository implements IUserRepository {
 
   public updateUserProfileAndAuth(
     id: string,
-    data: { name?: string; email?: string; password?: string; role?: 'admin' | 'user' }
+    data: { name?: string; email?: string; password?: string; picture?: string; role?: 'admin' | 'user' }
   ): boolean {
     const existing = this.getUserById(id);
     if (!existing) return false;
@@ -273,26 +273,27 @@ export class SqliteUserRepository implements IUserRepository {
     const newName = data.name !== undefined ? data.name.trim() : existing.name;
     const newEmail = data.email !== undefined ? data.email.trim().toLowerCase() : existing.email;
     const newRole = data.role !== undefined ? data.role : existing.role;
+    const newPicture = data.picture !== undefined ? data.picture : (existing.picture || null);
 
     if (data.password && data.password.trim().length >= 6) {
       const passwordHash = hashPassword(data.password.trim());
       const res = this.db
         .prepare(`
           UPDATE users
-          SET name = ?, email = ?, password_hash = ?, role = ?, updated_at = ?
+          SET name = ?, email = ?, picture = ?, password_hash = ?, role = ?, updated_at = ?
           WHERE id = ?
         `)
-        .run(newName, newEmail, passwordHash, newRole, now, id);
+        .run(newName, newEmail, newPicture, passwordHash, newRole, now, id);
       this.triggerRemoteSync();
       return res.changes > 0;
     } else {
       const res = this.db
         .prepare(`
           UPDATE users
-          SET name = ?, email = ?, role = ?, updated_at = ?
+          SET name = ?, email = ?, picture = ?, role = ?, updated_at = ?
           WHERE id = ?
         `)
-        .run(newName, newEmail, newRole, now, id);
+        .run(newName, newEmail, newPicture, newRole, now, id);
       this.triggerRemoteSync();
       return res.changes > 0;
     }

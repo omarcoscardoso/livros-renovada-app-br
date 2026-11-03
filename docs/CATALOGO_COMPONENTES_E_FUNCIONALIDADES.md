@@ -129,6 +129,24 @@ flowchart TD
 #### `src/components/lms/LmsBookmarksScreen.tsx`
 - **Responsabilidade**: Gestão de cursos salvos/favoritados pelo aluno para acesso rápido.
 
+#### `src/components/lms/LmsUserProfileScreen.tsx`
+- **Responsabilidade**: Painel do Aluno / Perfil do Usuário com visão 360° de métricas de aprendizado, cursos matriculados, certificados e gestão cadastral.
+- **Funcionalidades**:
+  - **Aba "Métricas & Aprendizado"**:
+    - Indicadores analíticos do aluno: cursos matriculados, formações concluídas, aulas assistidas, horas de estudo acumuladas, certificados conquistados e taxa média de progresso.
+    - Seção "Continuar de Onde Parou" com cards interativos e botão de atalho para o player de aula.
+    - Seção de certificados recentes conquistados com hash de validação.
+  - **Aba "Cursos Matriculados"**:
+    - Listagem de todas as formações que o aluno iniciou ou concluiu.
+    - Filtros por status: "Todos", "Em Andamento" e "Concluídos", além de campo de busca instantânea.
+    - Barra de progresso visual de aulas e atalho rápido para continuar ou rever o curso.
+  - **Aba "Meus Certificados"**:
+    - Grade de certificados emitidos com data, carga horária e código de autenticidade (com cópia em 1 clique).
+    - Botão "Visualizar & Baixar (.pdf)" acionando o visualizador de alta resolução e download.
+  - **Aba "Meus Dados & Segurança"**:
+    - Atualização cadastral de nome completo e URL da foto de perfil.
+    - Alteração de senha com exigência e validação da senha atual (se cadastrada) e confirmação de nova senha (mínimo 6 caracteres).
+
 ---
 
 ### 2.3. Painel Administrativo LMS Modularizado (`src/components/lms/admin/`)
@@ -266,6 +284,7 @@ O painel administrativo do LMS adota o **Princípio da Responsabilidade Única (
 | `/api/auth/login` | `POST` | Rate Limited | Autenticação por e-mail e senha |
 | `/api/auth/google` | `POST` | Rate Limited | Troca de credencial Google ID Token por sessão segura |
 | `/api/auth/me` | `GET` | Pública/Sessão | Retorna perfil do usuário logado e progresso |
+| `/api/auth/profile` | `PUT` | Autenticado | Atualiza dados cadastrais, foto e senha do próprio usuário |
 | `/api/auth/logout` | `POST` | Sessão | Encerra sessão ativa e invalida cookie |
 | `/api/admin/users` | `GET` | `requireAdmin` | Lista todos os usuários cadastrados e estatísticas de engajamento |
 | `/api/admin/users/:id` | `PUT` | `requireAdmin` | Edita dados do usuário (nome, e-mail, senha e papel) |
@@ -273,6 +292,7 @@ O painel administrativo do LMS adota o **Princípio da Responsabilidade Única (
 | `/api/admin/users/:id/role` | `PUT` | `requireAdmin` | Promove ou revoga permissão de administrador |
 | `/api/admin/users/:id/block` | `PUT` | `requireAdmin` | Bloqueia ou desbloqueia conta de usuário |
 | `/api/trainings` | `GET` | Autenticado | Lista cursos disponíveis e valida pré-requisitos |
+| `/api/trainings/my-learning` | `GET` | Autenticado | Retorna métricas de aprendizado, cursos matriculados e certificados do aluno |
 | `/api/trainings/:id` | `GET` | Autenticado | Detalhes do curso, syllabus e status de conclusão |
 | `/api/trainings/:id/lessons/:lessonId/complete` | `POST` | Autenticado | Conclui aula com validação de auditoria |
 | `/api/trainings/admin/students` | `GET` | `requireAdmin` | Lista matrículas e progresso de alunos |

@@ -27,6 +27,7 @@ interface NavbarProps {
   bookTitle: string;
   chapterTitle: string;
   hasOriginalPdf: boolean;
+  onOpenUserProfile?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,6 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   bookTitle,
   chapterTitle,
   hasOriginalPdf,
+  onOpenUserProfile,
 }) => {
   const { user, openLoginModal, logout } = useAuth();
   const isDark = theme === 'dark';
@@ -172,25 +174,29 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Google User Avatar / Login */}
         {user ? (
           <div className="flex items-center gap-1.5 pl-1">
-            {user.picture ? (
-              <img
-                src={user.picture}
-                alt={user.name}
-                className="w-6 h-6 rounded-full border border-amber-500/40"
-                title={`${user.name} (${user.email})`}
-              />
-            ) : (
-              <div
-                className="w-6 h-6 rounded-full bg-slate-700 text-amber-400 flex items-center justify-center font-bold text-[10px]"
-                title={`${user.name} (${user.email})`}
-              >
-                {user.name.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <button
+              onClick={() => onOpenUserProfile && onOpenUserProfile()}
+              className="flex items-center rounded-full transition-transform hover:scale-105 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400"
+              title={`Meu Painel de Aluno (${user.name})`}
+            >
+              {user.picture ? (
+                <img
+                  src={user.picture}
+                  alt={user.name}
+                  className="w-6 h-6 rounded-full border border-amber-500/40"
+                />
+              ) : (
+                <div
+                  className="w-6 h-6 rounded-full bg-slate-700 text-amber-400 flex items-center justify-center font-bold text-[10px]"
+                >
+                  {user.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+            </button>
             <button
               onClick={() => logout()}
               className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-              title="Sair da conta Google"
+              title="Sair da conta"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>

@@ -31,6 +31,7 @@ import { LmsCertificatesScreen } from './components/lms/LmsCertificatesScreen';
 import { LmsBookmarksScreen } from './components/lms/LmsBookmarksScreen';
 import { LmsAdminDashboard, LmsAdminTab } from './components/lms/LmsAdminDashboard';
 import { LmsWelcomeScreen } from './components/lms/LmsWelcomeScreen';
+import { LmsUserProfileScreen } from './components/lms/LmsUserProfileScreen';
 
 export type AppView =
   | 'lms-home'
@@ -40,7 +41,8 @@ export type AppView =
   | 'lms-admin'
   | 'bookshelf'
   | 'reader'
-  | 'book-admin';
+  | 'book-admin'
+  | 'user-profile';
 
 const DEFAULT_BOOK_ID = 'cell-church-larry-stockstill';
 
@@ -203,6 +205,7 @@ function LibraryApp({
 
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
   const [adminInitialTab, setAdminInitialTab] = useState<LmsAdminTab>('metrics');
+  const [userProfileTab, setUserProfileTab] = useState<'learning' | 'courses' | 'certificates' | 'profile'>('learning');
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -237,6 +240,10 @@ function LibraryApp({
           break;
         case 'book-admin':
           navigate('/admin/livros');
+          break;
+        case 'user-profile':
+          if (params?.tab) navigate(`/perfil?tab=${encodeURIComponent(params.tab)}`);
+          else navigate('/perfil');
           break;
         default:
           navigate('/');
@@ -281,6 +288,12 @@ function LibraryApp({
       setCurrentView('lms-admin');
     } else if (path === '/biblioteca') {
       setCurrentView('bookshelf');
+    } else if (path.startsWith('/perfil') || path.startsWith('/minha-conta')) {
+      const tabParam = searchParams.get('tab') as 'learning' | 'courses' | 'certificates' | 'profile' | null;
+      if (tabParam) {
+        setUserProfileTab(tabParam);
+      }
+      setCurrentView('user-profile');
     } else if (path.startsWith('/leitor')) {
       const bookId = path.replace('/leitor/', '').replace('/leitor', '').trim();
       if (bookId && bookId !== activeBook.id) {
@@ -948,6 +961,7 @@ function LibraryApp({
               bookTitle={activeBook.titlePt}
               chapterTitle={isCoverPage ? 'Capa & Folha de Rosto' : currentChapter.titlePt}
               hasOriginalPdf={activeBook.hasOriginalPdf}
+              onOpenUserProfile={() => navigateToView('user-profile')}
             />
 
             <main className="flex-1">
@@ -1035,6 +1049,8 @@ function LibraryApp({
                 ? 'bookmarks'
                 : currentView === 'lms-certificates'
                 ? 'certificates'
+                : currentView === 'user-profile'
+                ? 'profile'
                 : currentView === 'lms-admin'
                 ? 'admin'
                 : 'home'
@@ -1045,6 +1061,7 @@ function LibraryApp({
               else if (tab === 'bookmarks') navigateToView('lms-bookmarks');
               else if (tab === 'bookshelf') navigateToView('bookshelf');
               else if (tab === 'certificates') navigateToView('lms-certificates');
+              else if (tab === 'profile') navigateToView('user-profile');
               else if (tab === 'admin') {
                 setAdminInitialTab('metrics');
                 navigateToView('lms-admin');
@@ -1077,6 +1094,10 @@ function LibraryApp({
               pendingTrainings={pendingTrainings}
               onSelectTraining={handleSelectTraining}
               onOpenKnowledgeBase={() => navigateToView('bookshelf')}
+              onOpenUserProfile={(tab) => {
+                if (tab) setUserProfileTab(tab);
+                navigateToView('user-profile', { tab });
+              }}
               theme={theme}
               onChangeTheme={handleChangeTheme}
               isCollapsed={isSidebarCollapsed}
@@ -1148,6 +1169,16 @@ function LibraryApp({
               {currentView === 'lms-certificates' && (
                 <LmsCertificatesScreen
                   certificates={certificates}
+                  onOpenHome={() => navigateToView('lms-home')}
+                  theme={theme}
+                />
+              )}
+
+              {currentView === 'user-profile' && (
+                <LmsUserProfileScreen
+                  initialTab={userProfileTab}
+                  onSelectTraining={handleSelectTraining}
+                  onOpenLibrary={() => navigateToView('bookshelf')}
                   onOpenHome={() => navigateToView('lms-home')}
                   theme={theme}
                 />

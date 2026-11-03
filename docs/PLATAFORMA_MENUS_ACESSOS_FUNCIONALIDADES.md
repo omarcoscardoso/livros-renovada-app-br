@@ -360,9 +360,16 @@ O armazenamento de capas recortadas (`covers/`) e arquivos PDF brutos (`pdfs/`) 
 - `POST /api/auth/login`: Autenticação direta por e-mail e senha com comparação por tempo constante.
 - `POST /api/auth/google`: Valida o token JWT do Google e emite o cookie de sessão `session_token`.
 - `GET /api/auth/me`: Retorna os dados do usuário autenticado e seus capítulos lidos.
+- `PUT /api/auth/profile`: Atualiza dados cadastrais (nome, foto) e senha com validação da senha atual.
 - `POST /api/auth/logout`: Revoga a sessão ativa e exclui os cookies do cliente.
 - `GET /api/auth/progress`: Consulta o histórico de leitura do usuário.
 - `POST /api/auth/progress`: Sincroniza os capítulos lidos e última posição de leitura do usuário.
+
+### Módulo de Treinamentos e Aprendizado (`/api/trainings`)
+- `GET /api/trainings`: Lista os cursos da plataforma com elegibilidade e progresso individual.
+- `GET /api/trainings/my-learning`: Retorna cursos matriculados, métricas analíticas e certificados do aluno.
+- `GET /api/trainings/:id`: Detalhes, syllabus e videoaulas de um treinamento específico.
+- `POST /api/trainings/:id/lessons/:lessonId/toggle`: Alterna conclusão de aula com auditoria de visualização.
 
 ### Módulo de Assistência Pastoral com IA (`/api`)
 - `POST /api/assistant`: Envia pergunta do leitor com o contexto do capítulo para o mentor IA.
