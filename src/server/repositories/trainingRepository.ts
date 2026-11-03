@@ -4,6 +4,7 @@ import { getDatabase } from '../db/database';
 import {
   Training,
   TrainingLesson,
+  LessonReferenceLink,
   TrainingCategory,
   UserCertificate,
   TrainingReportSummary,
@@ -844,20 +845,60 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       }
     }
 
-    return rows.map((r) => ({
-      id: r.id,
-      trainingId: r.training_id,
-      title: r.title,
-      description: r.description,
-      videoType: r.video_type,
-      videoUrl: r.video_url,
-      durationMinutes: Number(r.duration_minutes || 15),
-      orderIndex: Number(r.order_index || 0),
-      isCompleted: completedSet.has(r.id),
-      auditInfo: auditMap.get(r.id),
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+    return rows.map((r) => {
+      let referenceLinks: LessonReferenceLink[] = [];
+      try {
+        const parsed = JSON.parse(r.reference_links_json || '[]');
+        if (Array.isArray(parsed)) {
+          referenceLinks = parsed
+            .filter((item) => item && typeof item.title === 'string' && typeof item.url === 'string')
+            .map((item) => ({
+              id: item.id,
+              title: item.title.trim(),
+              url: item.url.trim(),
+              description: item.description ? String(item.description).trim() : undefined,
+            }))
+            .filter((item) => item.title && item.url);
+        }
+      } catch {
+        referenceLinks = [];
+      }
+
+      return {
+        id: r.id,
+        trainingId: r.training_id,
+        title: r.title,
+        description: r.description,
+        videoType: r.video_type,
+        videoUrl: r.video_url,
+        durationMinutes: Number(r.duration_minutes || 15),
+        orderIndex: Number(r.order_index || 0),
+        referenceLinks,
+        isCompleted: completedSet.has(r.id),
+        auditInfo: auditMap.get(r.id),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    });
+  }
+
+  private sanitizeReferenceLinks(links?: LessonReferenceLink[]): LessonReferenceLink[] {
+    if (!Array.isArray(links)) return [];
+    return links
+      .filter((l) => l && typeof l.title === 'string' && typeof l.url === 'string')
+      .map((l) => {
+        let normalizedUrl = l.url.trim();
+        if (normalizedUrl && !/^https?:\/\//i.test(normalizedUrl)) {
+          normalizedUrl = `https://${normalizedUrl}`;
+        }
+        return {
+          id: l.id || `lnk_${crypto.randomBytes(4).toString('hex')}`,
+          title: l.title.trim(),
+          url: normalizedUrl,
+          description: l.description ? l.description.trim() : undefined,
+        };
+      })
+      .filter((l) => l.title.length > 0 && l.url.length > 0);
   }
 
   addLesson(trainingId: string, data: Partial<TrainingLesson>): TrainingLesson {
@@ -868,12 +909,13 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       .prepare('SELECT MAX(order_index) as m FROM training_lessons WHERE training_id = ?')
       .get(trainingId) as { m: number | null };
     const nextOrder = (maxOrder?.m ?? 0) + 1;
+    const referenceLinks = this.sanitizeReferenceLinks(data.referenceLinks);
 
     this.db.prepare(`
       INSERT INTO training_lessons (
         id, training_id, title, description, video_type, video_url,
-        duration_minutes, order_index, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        duration_minutes, order_index, reference_links_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       trainingId,
@@ -883,6 +925,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.videoUrl || '',
       Number(data.durationMinutes || 15),
       data.orderIndex ?? nextOrder,
+      JSON.stringify(referenceLinks),
       now,
       now
     );
@@ -896,6 +939,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       videoUrl: data.videoUrl || '',
       durationMinutes: Number(data.durationMinutes || 15),
       orderIndex: data.orderIndex ?? nextOrder,
+      referenceLinks,
       isCompleted: false,
       createdAt: now,
       updatedAt: now,
@@ -909,6 +953,17 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       .get(lessonId, trainingId) as any;
     if (!existing) return null;
 
+    let referenceLinks: LessonReferenceLink[] = [];
+    if (data.referenceLinks !== undefined) {
+      referenceLinks = this.sanitizeReferenceLinks(data.referenceLinks);
+    } else {
+      try {
+        referenceLinks = JSON.parse(existing.reference_links_json || '[]');
+      } catch {
+        referenceLinks = [];
+      }
+    }
+
     this.db.prepare(`
       UPDATE training_lessons SET
         title = ?,
@@ -917,6 +972,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         video_url = ?,
         duration_minutes = ?,
         order_index = ?,
+        reference_links_json = ?,
         updated_at = ?
       WHERE id = ? AND training_id = ?
     `).run(
@@ -926,6 +982,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.videoUrl ?? existing.video_url,
       data.durationMinutes !== undefined ? Number(data.durationMinutes) : existing.duration_minutes,
       data.orderIndex !== undefined ? Number(data.orderIndex) : existing.order_index,
+      JSON.stringify(referenceLinks),
       now,
       lessonId,
       trainingId
@@ -940,6 +997,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       videoUrl: data.videoUrl ?? existing.video_url,
       durationMinutes: data.durationMinutes !== undefined ? Number(data.durationMinutes) : existing.duration_minutes,
       orderIndex: data.orderIndex !== undefined ? Number(data.orderIndex) : existing.order_index,
+      referenceLinks,
       updatedAt: now,
     };
   }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, X, ExternalLink } from 'lucide-react';
+import { Play, X, ExternalLink, Link as LinkIcon } from 'lucide-react';
 import { TrainingLesson } from '../../../../types/training';
 import { getEmbedVideoUrl } from '../../../../utils/videoEmbed';
 import { ReaderTheme } from '../../../Navbar';
@@ -79,6 +79,46 @@ export const LessonPreviewModal: React.FC<LessonPreviewModalProps> = ({
             >
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Descrição da Aula:</h4>
               <p>{lesson.description}</p>
+            </div>
+          )}
+
+          {lesson.referenceLinks && lesson.referenceLinks.length > 0 && (
+            <div
+              className={`p-4 rounded-xl border space-y-2.5 ${
+                isLight
+                  ? 'bg-slate-50 border-slate-200 text-slate-700'
+                  : 'bg-slate-900/60 border-slate-800 text-slate-300'
+              }`}
+            >
+              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span>Links de Referência & Materiais Externos ({lesson.referenceLinks.length})</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {lesson.referenceLinks.map((ref, idx) => (
+                  <a
+                    key={ref.id || idx}
+                    href={ref.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`p-3 rounded-xl border transition-all flex items-start justify-between gap-2.5 group ${
+                      isLight
+                        ? 'bg-white border-slate-200 hover:border-blue-400 text-slate-800'
+                        : 'bg-[#171B38] border-slate-700/80 hover:border-blue-500/60 text-slate-100'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-xs group-hover:text-blue-400 transition-colors truncate">
+                        {ref.title}
+                      </p>
+                      {ref.description && (
+                        <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">{ref.description}</p>
+                      )}
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 

@@ -25,6 +25,13 @@ export interface TrainingCategory {
   updatedAt?: string;
 }
 
+export interface LessonReferenceLink {
+  id?: string;
+  title: string;
+  url: string;
+  description?: string;
+}
+
 export interface TrainingLesson {
   id: string;
   trainingId: string;
@@ -34,6 +41,7 @@ export interface TrainingLesson {
   videoUrl: string;
   durationMinutes: number;
   orderIndex: number;
+  referenceLinks?: LessonReferenceLink[];
   isCompleted?: boolean;
   auditInfo?: {
     secondsWatched?: number;

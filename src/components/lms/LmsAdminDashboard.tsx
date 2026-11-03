@@ -16,6 +16,7 @@ import {
 import {
   Training,
   TrainingLesson,
+  LessonReferenceLink,
   TrainingCategory,
   TrainingReportSummary,
   VideoType,
@@ -115,13 +116,22 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
   const [showLessonModal, setShowLessonModal] = useState(false);
   const [editingLesson, setEditingLesson] = useState<TrainingLesson | null>(null);
   const [previewingLesson, setPreviewingLesson] = useState<TrainingLesson | null>(null);
-  const [lessonForm, setLessonForm] = useState({
+  const [lessonForm, setLessonForm] = useState<{
+    title: string;
+    description: string;
+    videoType: VideoType;
+    videoUrl: string;
+    durationMinutes: number;
+    orderIndex: number;
+    referenceLinks: LessonReferenceLink[];
+  }>({
     title: '',
     description: '',
     videoType: 'youtube' as VideoType,
     videoUrl: '',
     durationMinutes: 20,
     orderIndex: 1,
+    referenceLinks: [],
   });
 
   // Students State
@@ -531,6 +541,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       videoUrl: '',
       durationMinutes: 20,
       orderIndex: lessonsList.length + 1,
+      referenceLinks: [],
     });
     setShowLessonModal(true);
   };
@@ -544,6 +555,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       videoUrl: lesson.videoUrl,
       durationMinutes: lesson.durationMinutes,
       orderIndex: lesson.orderIndex,
+      referenceLinks: lesson.referenceLinks ? [...lesson.referenceLinks] : [],
     });
     setShowLessonModal(true);
   };
