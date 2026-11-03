@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Check,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { Training, TrainingLesson, UserCertificate, VerificationMethod } from '../../types/training';
 import { BookSummary } from '../../data/bookTypes';
@@ -830,6 +831,87 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                 </div>
               )}
 
+              {/* Lista de Links de Referência & Materiais Externos */}
+              {activeLesson.referenceLinks && activeLesson.referenceLinks.length > 0 && (
+                <div
+                  className={`border-t pt-3.5 space-y-2.5 ${
+                    isLight ? 'border-slate-100' : 'border-slate-700/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <LinkIcon className={`w-3.5 h-3.5 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} />
+                    <h4
+                      className={`text-xs font-bold font-outfit uppercase tracking-wider ${
+                        isLight ? 'text-slate-700' : 'text-slate-300'
+                      }`}
+                    >
+                      Referências & Materiais Complementares
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {activeLesson.referenceLinks.map((ref, idx) => (
+                      <a
+                        key={ref.id || idx}
+                        href={ref.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`p-3 rounded-2xl border transition-all flex items-start justify-between gap-3 group ${
+                          isLight
+                            ? 'bg-slate-50/90 hover:bg-blue-50/60 border-slate-200 hover:border-blue-300 text-slate-800 shadow-xs'
+                            : 'bg-[#121630]/80 hover:bg-[#1A2146] border-slate-700/70 hover:border-blue-500/50 text-slate-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div
+                            className={`p-1.5 rounded-xl shrink-0 mt-0.5 transition-colors ${
+                              isLight
+                                ? 'bg-blue-100/80 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
+                                : 'bg-blue-500/15 text-blue-400 group-hover:bg-blue-600 group-hover:text-white'
+                            }`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p
+                              className={`font-outfit font-bold text-xs truncate transition-colors ${
+                                isLight
+                                  ? 'text-slate-900 group-hover:text-blue-700'
+                                  : 'text-white group-hover:text-blue-300'
+                              }`}
+                            >
+                              {ref.title}
+                            </p>
+                            {ref.description ? (
+                              <p
+                                className={`text-[11px] font-sans line-clamp-2 mt-0.5 ${
+                                  isLight ? 'text-slate-500' : 'text-slate-400'
+                                }`}
+                              >
+                                {ref.description}
+                              </p>
+                            ) : (
+                              <p
+                                className={`text-[10px] font-mono truncate mt-0.5 ${
+                                  isLight ? 'text-slate-400' : 'text-slate-500'
+                                }`}
+                              >
+                                {ref.url}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight
+                          className={`w-4 h-4 shrink-0 mt-1 transition-transform group-hover:translate-x-0.5 ${
+                            isLight ? 'text-slate-400 group-hover:text-blue-600' : 'text-slate-500 group-hover:text-blue-400'
+                          }`}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Navegação Entre Aulas (Anterior / Próxima) */}
               <div
                 className={`pt-2 flex items-center justify-between border-t text-xs ${
@@ -1276,6 +1358,20 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                               <span className="uppercase text-[9px] font-mono">
                                 {lesson.videoType === 'google_drive' ? 'Drive' : 'YouTube'}
                               </span>
+                              {lesson.referenceLinks && lesson.referenceLinks.length > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span
+                                    className={`inline-flex items-center gap-0.5 font-semibold ${
+                                      isLight ? 'text-indigo-600' : 'text-indigo-400'
+                                    }`}
+                                    title={`${lesson.referenceLinks.length} link(s) de referência`}
+                                  >
+                                    <LinkIcon className="w-2.5 h-2.5" />
+                                    <span>{lesson.referenceLinks.length}</span>
+                                  </span>
+                                </>
+                              )}
                               {isActive && (
                                 <>
                                   <span>•</span>

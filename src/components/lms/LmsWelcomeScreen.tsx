@@ -88,31 +88,32 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
             : 'bg-[#0F1224]/90 border-slate-800/80'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="relative shrink-0">
-              <img src="/assets/icon.svg" alt="Lumi Ícone" className="w-9 h-9 object-contain" />
+              <img src="/assets/icon.svg" alt="Lumi Ícone" className="w-8 h-8 sm:w-9 sm:h-9 object-contain" />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <img src="/assets/logo_text.svg" alt="LUMI" className="h-5 w-auto object-contain" />
+                <img src="/assets/logo_text.svg" alt="LUMI" className="h-4 sm:h-5 w-auto object-contain" />
               </div>
               <p
-                className={`text-[10px] font-medium font-sans truncate ${
+                className={`text-[9px] sm:text-[10px] font-medium font-sans truncate ${
                   isLight ? 'text-slate-500' : 'text-slate-400'
                 }`}
               >
-                Igreja Presbiteriana Renovada • Viamão
+                <span className="sm:hidden">IPR • Viamão</span>
+                <span className="hidden sm:inline">Igreja Presbiteriana Renovada • Viamão</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {onChangeTheme && (
               <button
                 onClick={() => onChangeTheme(isLight ? 'dark' : 'light')}
-                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                className={`p-2 rounded-xl border transition-colors cursor-pointer shrink-0 ${
                   isLight
                     ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
                     : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
@@ -126,7 +127,7 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
 
             <button
               onClick={() => openLoginModal('Entre para continuar sua jornada de treinamento.')}
-              className={`px-4 py-2 rounded-xl font-outfit font-bold text-xs border transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl font-outfit font-bold text-xs border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 isLight
                   ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 shadow-xs'
                   : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
@@ -137,7 +138,7 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
 
             <button
               onClick={() => openLoginModal('Crie sua conta gratuita para acessar os treinamentos.')}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-outfit font-bold text-xs shadow-md shadow-blue-900/30 transition-all cursor-pointer"
+              className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-outfit font-bold text-xs shadow-md shadow-blue-900/30 transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
               Criar Conta
             </button>
@@ -146,17 +147,17 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
       </header>
 
       {/* 2. Hero Section: Warm & Inspiring Welcome */}
-      <section className="relative overflow-hidden py-12 sm:py-20 px-4 sm:px-8 border-b border-slate-200/60 dark:border-slate-800/80">
+      <section className="relative overflow-hidden py-8 sm:py-20 px-4 sm:px-8 border-b border-slate-200/60 dark:border-slate-800/80">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-gradient-to-br from-blue-500/30 via-indigo-500/20 to-emerald-500/20 rounded-full blur-3xl" />
         </div>
 
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 items-center relative z-10">
           {/* Left Column: Inspiring Pitch */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold font-outfit uppercase tracking-wider bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 shadow-xs">
-              <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-              <span>Ambiente de Crescimento & Comunhão</span>
+          <div className="lg:col-span-7 space-y-5 sm:space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold font-outfit uppercase tracking-wider bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 shadow-xs max-w-full">
+              <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 shrink-0" />
+              <span className="truncate">Ambiente de Crescimento & Comunhão</span>
             </div>
 
             <h1 className="font-outfit font-black text-3xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.15]">
@@ -176,7 +177,7 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
             </p>
 
             {/* Quick Benefits Pills */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs font-outfit">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 pt-1 sm:pt-2 text-xs font-outfit">
               <div className="flex items-center gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span>Gestão de turmas e acompanhamento pastoral</span>
@@ -195,10 +196,10 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 flex flex-wrap items-center gap-3">
+            <div className="pt-2 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3">
               <button
                 onClick={() => openLoginModal('Cadastre-se para iniciar seus treinamentos.')}
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold font-outfit text-sm shadow-xl shadow-blue-900/40 transition-all cursor-pointer transform hover:scale-[1.02]"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold font-outfit text-sm shadow-xl shadow-blue-900/40 transition-all cursor-pointer transform hover:scale-[1.02]"
               >
                 <span>Cadastrar-se</span>
                 <ArrowRight className="w-4 h-4" />
@@ -206,14 +207,14 @@ export const LmsWelcomeScreen: React.FC<LmsWelcomeScreenProps> = ({
 
               <button
                 onClick={() => openLoginModal('Entre com sua conta para continuar.')}
-                className={`inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl border font-bold font-outfit text-sm transition-all cursor-pointer ${
+                className={`inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl border font-bold font-outfit text-sm transition-all cursor-pointer ${
                   isLight
                     ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800 shadow-sm'
                     : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-200'
                 }`}
               >
                 <LogIn className="w-4 h-4" />
-                <span>Já Sou Discipulo / Entrar</span>
+                <span>Já Sou Discípulo / Entrar</span>
               </button>
             </div>
           </div>

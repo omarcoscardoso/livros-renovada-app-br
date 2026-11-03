@@ -1243,5 +1243,62 @@ describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
       expect(resData.certificates.length).toBe(1);
       expect(resData.certificates[0].trainingTitle).toBe('Curso de Crescimento Espiritual');
     });
+
+    it('deve persistir, atualizar e listar links de referência e materiais externos em uma aula', () => {
+      const course = repo.createTraining({
+        title: 'Curso com Materiais de Apoio Externos',
+        category: 'Teologia',
+        workloadHours: 4,
+      });
+
+      const lesson = repo.addLesson(course.id, {
+        title: 'Aula 1: Hermenêutica Bíblica',
+        description: 'Princípios de interpretação das Escrituras.',
+        videoType: 'youtube',
+        videoUrl: 'https://www.youtube.com/watch?v=hermeneutica1',
+        durationMinutes: 30,
+        referenceLinks: [
+          {
+            title: 'Apostila em PDF no Google Drive',
+            url: 'https://drive.google.com/drive/folders/abc123xyz',
+            description: 'Pasta compartilhada com slides e exercícios',
+          },
+          {
+            title: 'Artigo Teológico Complementar',
+            url: 'iprviamao.com.br/artigos/hermeneutica',
+            description: 'Referência bibliográfica cap. 2',
+          },
+        ],
+      });
+
+      expect(lesson.referenceLinks).toBeDefined();
+      expect(lesson.referenceLinks?.length).toBe(2);
+      expect(lesson.referenceLinks?.[0].title).toBe('Apostila em PDF no Google Drive');
+      // Deve normalizar URL sem protocolo adicionando https://
+      expect(lesson.referenceLinks?.[1].url).toBe('https://iprviamao.com.br/artigos/hermeneutica');
+
+      // Buscar pelo repositório
+      const fetchedLessons = repo.getLessons(course.id);
+      expect(fetchedLessons.length).toBe(1);
+      expect(fetchedLessons[0].referenceLinks?.length).toBe(2);
+      expect(fetchedLessons[0].referenceLinks?.[0].description).toBe('Pasta compartilhada com slides e exercícios');
+
+      // Atualizar links da aula
+      const updated = repo.updateLesson(course.id, lesson.id, {
+        referenceLinks: [
+          {
+            title: 'Novo Link de Outra Igreja Parceira',
+            url: 'https://outraigreja.org.br/estudo',
+          },
+        ],
+      });
+
+      expect(updated?.referenceLinks?.length).toBe(1);
+      expect(updated?.referenceLinks?.[0].title).toBe('Novo Link de Outra Igreja Parceira');
+
+      const fetchedAfterUpdate = repo.getLessons(course.id);
+      expect(fetchedAfterUpdate[0].referenceLinks?.length).toBe(1);
+      expect(fetchedAfterUpdate[0].referenceLinks?.[0].url).toBe('https://outraigreja.org.br/estudo');
+    });
   });
 });

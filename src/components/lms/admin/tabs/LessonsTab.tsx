@@ -7,6 +7,7 @@ import {
   Play,
   Edit2,
   Trash2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { Training, TrainingLesson } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
@@ -130,7 +131,7 @@ export const LessonsTab: React.FC<LessonsTabProps> = ({
                     {lesson.description && (
                       <p className="text-xs text-slate-400 mt-1 line-clamp-1">{lesson.description}</p>
                     )}
-                    <div className="flex items-center space-x-3 text-xs text-slate-400 mt-1.5">
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1.5">
                       <span className="flex items-center space-x-1">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{lesson.durationMinutes} minutos</span>
@@ -144,6 +145,15 @@ export const LessonsTab: React.FC<LessonsTabProps> = ({
                         <ExternalLink className="w-3 h-3" />
                         <span>Link original</span>
                       </a>
+                      {lesson.referenceLinks && lesson.referenceLinks.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 text-[10px] font-semibold">
+                          <LinkIcon className="w-3 h-3" />
+                          <span>
+                            {lesson.referenceLinks.length}{' '}
+                            {lesson.referenceLinks.length === 1 ? 'link de apoio' : 'links de apoio'}
+                          </span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

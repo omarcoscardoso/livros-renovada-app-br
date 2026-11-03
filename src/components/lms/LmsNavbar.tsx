@@ -88,12 +88,12 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
           : 'bg-[#0F1224]/95 border-b border-slate-800/90 text-white'
       }`}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-6">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-6">
         {/* Left: Mobile Sidebar Trigger & Brand Badge */}
-        <div className="flex items-center gap-2.5 lg:hidden">
+        <div className="flex items-center gap-2 sm:gap-2.5 lg:hidden min-w-0">
           <button
             onClick={onToggleSidebar}
-            className={`p-2 rounded-xl border transition-all cursor-pointer shadow-sm active:scale-95 ${
+            className={`p-2 rounded-xl border transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 ${
               isLight
                 ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
                 : 'bg-slate-800/90 hover:bg-slate-700/90 border-slate-700/80 text-white'
@@ -103,10 +103,10 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
             <Menu className="w-5 h-5" />
           </button>
 
-          <div className="flex items-center gap-2">
-            <img src="/assets/icon.svg" alt="Lumi Ícone" className="w-6 h-6 object-contain hidden sm:block" />
-            <img src="/assets/logo_text.svg" alt="LUMI" className="h-4 w-auto object-contain" />
-            <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[9px] font-bold font-outfit uppercase tracking-wider bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-400/40">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/assets/icon.svg" alt="Lumi Ícone" className="w-6 h-6 object-contain hidden sm:block shrink-0" />
+            <img src="/assets/logo_text.svg" alt="LUMI" className="h-4 w-auto object-contain shrink-0" />
+            <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[9px] font-bold font-outfit uppercase tracking-wider bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-400/40 shrink-0">
               Treinamento
             </span>
           </div>
@@ -162,7 +162,7 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
         </div>
 
         {/* Right: Actions, Pending Tasks & User Profile */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* Mobile Search Toggle Button */}
           <button
             onClick={() => setShowMobileSearch((p) => !p)}
@@ -199,7 +199,10 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
           {/* Minhas Pendências */}
           <div className="relative">
             <button
-              onClick={() => setShowPendingModal((p) => !p)}
+              onClick={() => {
+                setShowPendingModal((p) => !p);
+                setShowUserDropdown(false);
+              }}
               className={`relative p-2 rounded-xl border transition-all cursor-pointer ${
                 isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 shadow-xs'
@@ -219,7 +222,7 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
             {/* Pending Modal Popover */}
             {showPendingModal && (
               <div
-                className={`absolute right-0 mt-2 w-80 rounded-2xl border shadow-2xl p-4 z-50 space-y-3 ${
+                className={`fixed sm:absolute right-3 left-3 sm:left-auto sm:right-0 top-15 sm:top-auto sm:mt-2 sm:w-80 rounded-2xl border shadow-2xl p-4 z-50 space-y-3 ${
                   isLight
                     ? 'bg-white border-slate-200 text-slate-900'
                     : 'bg-[#171B38] border-slate-700 text-white'
@@ -329,7 +332,10 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
           {user ? (
             <div className="relative">
               <button
-                onClick={() => setShowUserDropdown((p) => !p)}
+                onClick={() => {
+                  setShowUserDropdown((p) => !p);
+                  setShowPendingModal(false);
+                }}
                 className="flex items-center gap-2 p-1 rounded-full ring-2 ring-blue-500/40 hover:ring-blue-400 transition-all cursor-pointer"
                 aria-label="Perfil de Usuário"
               >
@@ -348,7 +354,7 @@ export const LmsNavbar: React.FC<LmsNavbarProps> = ({
 
               {showUserDropdown && (
                 <div
-                  className={`absolute right-0 mt-2 w-64 rounded-2xl border shadow-2xl p-2.5 z-50 space-y-1.5 ${
+                  className={`fixed sm:absolute right-3 left-3 sm:left-auto sm:right-0 top-15 sm:top-auto sm:mt-2 sm:w-64 rounded-2xl border shadow-2xl p-2.5 z-50 space-y-1.5 ${
                     isLight
                       ? 'bg-white border-slate-200 text-slate-900'
                       : 'bg-[#171B38] border-slate-700 text-white'

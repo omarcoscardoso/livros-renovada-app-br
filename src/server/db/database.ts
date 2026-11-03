@@ -295,6 +295,7 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       video_url TEXT NOT NULL,
       duration_minutes INTEGER DEFAULT 15,
       order_index INTEGER NOT NULL DEFAULT 0,
+      reference_links_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -396,6 +397,17 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
   if (!categoryColNames.has('prerequisite_category_id')) {
     try {
       db.exec(`ALTER TABLE training_categories ADD COLUMN prerequisite_category_id TEXT`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure training_lessons table has reference_links_json column for external reference links
+  const lessonCols = db.prepare('PRAGMA table_info(training_lessons)').all() as Array<{ name: string }>;
+  const lessonColNames = new Set(lessonCols.map((c) => c.name));
+  if (!lessonColNames.has('reference_links_json')) {
+    try {
+      db.exec(`ALTER TABLE training_lessons ADD COLUMN reference_links_json TEXT NOT NULL DEFAULT '[]'`);
     } catch {
       // ignore
     }
