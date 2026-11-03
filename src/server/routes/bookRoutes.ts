@@ -210,7 +210,7 @@ export function createBookRouter(
       const customInstructions = (req.body.customInstructions as string)?.trim() || '';
       const apiKeyOverride = (req.body.apiKey as string)?.trim() || '';
 
-      if (apiKeyOverride && apiKeyOverride.length > 10) {
+      if (apiKeyOverride && apiKeyOverride.length > 10 && (req as any).user?.role === 'admin') {
         repo.setSetting('gemini_api_key', apiKeyOverride);
       }
 

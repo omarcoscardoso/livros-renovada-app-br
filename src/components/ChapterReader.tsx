@@ -119,13 +119,13 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
   // Theme styling
   const themeClasses = {
-    dark: 'bg-[#0f141c] text-slate-200',
+    dark: 'bg-[#0F1224] text-slate-100',
     sepia: 'bg-[#f7f3e8] text-[#2c2217]',
-    light: 'bg-white text-slate-800',
+    light: 'bg-[#F8F9FC] text-slate-800',
   }[theme];
 
   const borderClass = {
-    dark: 'border-slate-800',
+    dark: 'border-slate-800/80',
     sepia: 'border-[#e3dac7]',
     light: 'border-slate-200',
   }[theme];
@@ -137,9 +137,9 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   }[theme];
 
   const summaryBgClass = {
-    dark: 'bg-slate-900/60 border-slate-800 text-slate-300',
+    dark: 'bg-[#171B38]/85 border-slate-700/60 text-slate-200 shadow-xl shadow-black/40',
     sepia: 'bg-[#ece4d0]/70 border-[#ded3be] text-[#3d3126]',
-    light: 'bg-slate-50 border-slate-200 text-slate-700',
+    light: 'bg-white border-slate-200 text-slate-700 shadow-sm',
   }[theme];
 
   const paragraphFontClass = {
@@ -228,7 +228,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             <div className="pt-2">
               <button
                 onClick={onNextChapter}
-                className="inline-flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm sm:text-base transition-all shadow-xl shadow-amber-500/20 cursor-pointer"
+                className="inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold font-outfit text-sm sm:text-base transition-all shadow-xl shadow-emerald-950/60 cursor-pointer transform hover:scale-[1.02]"
               >
                 <BookOpen className="w-5 h-5" />
                 <span>Iniciar Leitura: {firstChapterTitle}</span>
@@ -263,7 +263,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
       {/* Ambient Scroll-Linked Reading Progress Bar (Antigravity HUD) */}
       <div className="fixed top-0 left-0 right-0 z-50 h-[3px] bg-black/10 dark:bg-white/5 pointer-events-none">
         <div
-          className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 transition-all duration-150 ease-out shadow-[0_0_10px_rgba(245,158,11,0.8)]"
+          className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-150 ease-out shadow-[0_0_12px_rgba(16,185,129,0.8)]"
           style={{ width: `${scrollPercent}%` }}
         />
       </div>
@@ -319,18 +319,25 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         {/* Header */}
         <header className={`space-y-4 border-b pb-8 ${borderClass}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className={`uppercase tracking-widest font-mono text-[11px] ${subtleTextClass}`}>
-              {chapter.number === 0
-                ? chapter.titlePt.toLowerCase().includes('dedicat')
-                  ? 'Dedicatória'
-                  : chapter.titlePt.toLowerCase().includes('pref')
-                  ? 'Prefácio'
-                  : 'Introdução'
-                : chapter.id?.startsWith('appendix') || chapter.titlePt.toLowerCase().startsWith('apêndice')
-                ? 'Apêndice'
-                : `Capítulo ${chapter.number}`}{' '}
-              • Pág. {chapter.pages}
-            </span>
+            <div className="flex flex-col">
+              {bookTitle && (
+                <span className={`sm:hidden uppercase tracking-widest font-mono text-[11px] mb-0.5 ${subtleTextClass}`}>
+                  {bookTitle}
+                </span>
+              )}
+              <span className={`uppercase tracking-widest font-mono text-[11px] ${subtleTextClass}`}>
+                {chapter.number === 0
+                  ? chapter.titlePt.toLowerCase().includes('dedicat')
+                    ? 'Dedicatória'
+                    : chapter.titlePt.toLowerCase().includes('pref')
+                    ? 'Prefácio'
+                    : 'Introdução'
+                  : chapter.id?.startsWith('appendix') || chapter.titlePt.toLowerCase().startsWith('apêndice')
+                  ? 'Apêndice'
+                  : `Capítulo ${chapter.number}`}{' '}
+                • Pág. {chapter.pages}
+              </span>
+            </div>
 
             <div className="flex items-center gap-2">
               {hasEnglishTranslation && (
@@ -525,9 +532,9 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
       {/* Floating Glassmorphic Reading Dock (Antigravity HUD) */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 no-print transition-all duration-300">
         <div
-          className={`flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-2 rounded-full border shadow-2xl backdrop-blur-xl ${
+          className={`flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-2 rounded-full border shadow-2xl backdrop-blur-2xl ${
             theme === 'dark'
-              ? 'bg-slate-950/85 border-slate-800/80 text-slate-200 shadow-black/70'
+              ? 'bg-[#171B38]/90 border-slate-700/60 text-slate-200 shadow-black/80'
               : theme === 'sepia'
               ? 'bg-[#ece4d0]/90 border-[#d8c7a7] text-[#2c2217] shadow-amber-950/15'
               : 'bg-white/90 border-slate-200 text-slate-800 shadow-slate-900/10'
@@ -549,7 +556,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               {chapter.number === 0 ? 'Intro' : `Cap. ${chapter.number}`}
             </span>
             <span className="opacity-30">•</span>
-            <span className="text-amber-500 font-bold">{Math.round(scrollPercent)}%</span>
+            <span className="text-emerald-400 font-bold">{Math.round(scrollPercent)}%</span>
           </div>
 
           {/* Mark as Read Toggle */}
@@ -602,14 +609,14 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
       {/* Reader Settings Popover */}
       {showSettingsPanel && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-sm p-4 rounded-3xl border shadow-2xl backdrop-blur-2xl bg-slate-950/90 dark:bg-slate-900/90 border-slate-800 text-slate-100 space-y-3.5 animate-in slide-in-from-bottom duration-200">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-sm p-4 rounded-3xl border shadow-2xl backdrop-blur-2xl bg-[#171B38]/95 border-slate-700/80 text-slate-100 space-y-3.5 animate-in slide-in-from-bottom duration-200">
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+            <h4 className="text-xs font-bold font-outfit uppercase tracking-wider text-emerald-400">
               Personalizar Leitor
             </h4>
             <button
               onClick={() => setShowSettingsPanel(false)}
-              className="p-1 rounded-full hover:bg-white/10 cursor-pointer"
+              className="p-1 rounded-full hover:bg-white/10 cursor-pointer text-slate-400 hover:text-white"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -617,13 +624,13 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
           {/* Font Family */}
           <div className="space-y-1.5">
-            <span className="text-[11px] opacity-70 font-semibold">Tipografia:</span>
+            <span className="text-[11px] opacity-70 font-semibold font-outfit">Tipografia:</span>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 onClick={() => handleSetFontFamily('serif')}
                 className={`py-1.5 px-3 rounded-xl border text-center font-editorial transition-colors cursor-pointer ${
                   fontFamily === 'serif'
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold border-emerald-400/50 shadow-md'
                     : 'border-white/10 hover:border-white/20'
                 }`}
               >
@@ -631,9 +638,9 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               </button>
               <button
                 onClick={() => handleSetFontFamily('sans')}
-                className={`py-1.5 px-3 rounded-xl border text-center font-sans transition-colors cursor-pointer ${
+                className={`py-1.5 px-3 rounded-xl border text-center font-outfit font-medium transition-colors cursor-pointer ${
                   fontFamily === 'sans'
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold border-emerald-400/50 shadow-md'
                     : 'border-white/10 hover:border-white/20'
                 }`}
               >
@@ -645,7 +652,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           {/* Font Size */}
           {onChangeFontSize && (
             <div className="space-y-1.5">
-              <span className="text-[11px] opacity-70 font-semibold">Tamanho da Fonte:</span>
+              <span className="text-[11px] opacity-70 font-semibold font-outfit">Tamanho da Fonte:</span>
               <div className="grid grid-cols-4 gap-1 text-xs">
                 {(['sm', 'base', 'lg', 'xl'] as FontSize[]).map((sz) => (
                   <button
@@ -653,7 +660,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                     onClick={() => onChangeFontSize(sz)}
                     className={`py-1 rounded-xl border text-center uppercase font-mono transition-colors cursor-pointer ${
                       fontSize === sz
-                        ? 'bg-amber-500 text-slate-950 font-bold border-amber-500'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold border-emerald-400/50 shadow-md'
                         : 'border-white/10 hover:border-white/20'
                     }`}
                   >

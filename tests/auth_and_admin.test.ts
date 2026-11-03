@@ -10,6 +10,7 @@ import { GeminiConversionService } from '../src/server/services/geminiConversion
 import { PdfExtractorService } from '../src/server/services/pdfExtractorService';
 import { InMemoryStorageService } from '../src/server/services/storageService';
 import { createAuthMiddleware } from '../src/server/middleware/authMiddleware';
+import { authRateLimiter } from '../src/server/middleware/rateLimitMiddleware';
 
 describe('Segurança, Autenticação Google e Administração', () => {
   let tempDbPath: string;
@@ -70,6 +71,37 @@ describe('Segurança, Autenticação Google e Administração', () => {
     expect(expiredSessionUser).toBeNull();
   });
 
+  it('deve registrar e autenticar usuário com e-mail e senha sem necessidade de Google OAuth', () => {
+    const registered = userRepo.registerEmailUser(
+      'lider.novo@renovada.com.br',
+      'Novo Líder de Célula',
+      'senhaForte123'
+    );
+
+    expect(registered.id).toBeDefined();
+    expect(registered.email).toBe('lider.novo@renovada.com.br');
+    expect(registered.name).toBe('Novo Líder de Célula');
+    expect(registered.role).toBe('user');
+
+    // Autenticar com credenciais corretas
+    const verified = userRepo.verifyEmailUser('lider.novo@renovada.com.br', 'senhaForte123');
+    expect(verified).not.toBeNull();
+    expect(verified?.id).toBe(registered.id);
+
+    // Rejeitar senha incorreta
+    const wrongPwd = userRepo.verifyEmailUser('lider.novo@renovada.com.br', 'senhaIncorreta');
+    expect(wrongPwd).toBeNull();
+
+    // Rejeitar e-mail duplicado
+    expect(() => {
+      userRepo.registerEmailUser(
+        'lider.novo@renovada.com.br',
+        'Outro Nome',
+        'outraSenha123'
+      );
+    }).toThrow(/Já existe uma conta cadastrada/);
+  });
+
   it('deve salvar e sincronizar o progresso de leitura individual por usuário no SQLite', () => {
     const user = userRepo.upsertGoogleUser(
       'leitor@renovada.com.br',
@@ -118,6 +150,62 @@ describe('Segurança, Autenticação Google e Administração', () => {
     const token = userRepo.createSession(user.id, 1);
     const sessionUser = userRepo.getUserBySessionToken(token);
     expect(sessionUser).toBeNull(); // Usuários bloqueados não conseguem sessão ativa
+  });
+
+  it('deve listar usuários com métricas de engajamento e suportar promoção para admin', () => {
+    const user = userRepo.upsertGoogleUser('membro.ativo@renovada.com.br', 'Membro Ativo');
+    expect(user.role).toBe('user');
+
+    // Listar usuários e verificar métricas de engajamento
+    const users = userRepo.listUsers();
+    const found = users.find((u) => u.id === user.id);
+    expect(found).toBeDefined();
+    expect(typeof found?.enrollmentsCount).toBe('number');
+    expect(typeof found?.completedCount).toBe('number');
+    expect(typeof found?.certificatesCount).toBe('number');
+
+    // Promover para admin e re-verificar lista
+    userRepo.updateUserRole(user.id, 'admin');
+    const usersAfterPromotion = userRepo.listUsers();
+    const promotedUser = usersAfterPromotion.find((u) => u.id === user.id);
+    expect(promotedUser?.role).toBe('admin');
+
+    // Revogar admin
+    userRepo.updateUserRole(user.id, 'user');
+    const usersAfterRevocation = userRepo.listUsers();
+    const demotedUser = usersAfterRevocation.find((u) => u.id === user.id);
+    expect(demotedUser?.role).toBe('user');
+  });
+
+  it('deve permitir ao admin editar cadastro, redefinir senha e excluir usuário', () => {
+    const user = userRepo.registerEmailUser('usuario.para.editar@exemplo.com', 'Nome Antigo', 'senhaAntiga123');
+    expect(user.name).toBe('Nome Antigo');
+
+    // Editar nome e trocar senha
+    const updateSuccess = userRepo.updateUserProfileAndAuth(user.id, {
+      name: 'Nome Atualizado',
+      password: 'novaSenhaSegura456',
+    });
+    expect(updateSuccess).toBe(true);
+
+    const updatedUser = userRepo.getUserById(user.id);
+    expect(updatedUser?.name).toBe('Nome Atualizado');
+
+    // Validar nova senha
+    const verified = userRepo.verifyEmailUser('usuario.para.editar@exemplo.com', 'novaSenhaSegura456');
+    expect(verified).not.toBeNull();
+    expect(verified?.id).toBe(user.id);
+
+    // Senha antiga não deve mais funcionar
+    const oldLogin = userRepo.verifyEmailUser('usuario.para.editar@exemplo.com', 'senhaAntiga123');
+    expect(oldLogin).toBeNull();
+
+    // Excluir usuário
+    const deleteSuccess = userRepo.deleteUser(user.id);
+    expect(deleteSuccess).toBe(true);
+
+    const deletedCheck = userRepo.getUserById(user.id);
+    expect(deletedCheck).toBeNull();
   });
 
   it('deve permitir ao admin definir e desmarcar destaque editorial (isFeatured)', () => {
@@ -289,5 +377,10 @@ describe('Segurança, Autenticação Google e Administração', () => {
     auth.requireAdmin(mockReqInvalid, mockResInvalid, () => {});
     expect(authErrorResponse).not.toBeNull();
     expect(authErrorResponse.code).toBe(401);
+  });
+
+  it('deve exportar e configurar o middleware de rate limiting para rotas de autenticação', () => {
+    expect(authRateLimiter).toBeDefined();
+    expect(typeof authRateLimiter).toBe('function');
   });
 });

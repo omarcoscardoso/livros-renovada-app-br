@@ -10,6 +10,9 @@ export interface User {
   picture?: string;
   role: 'admin' | 'user';
   isBlocked: boolean;
+  enrollmentsCount?: number;
+  completedCount?: number;
+  certificatesCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -19,13 +22,38 @@ export interface UserProgressData {
   readChapters: string[];
 }
 
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, key] = storedHash.split(':');
+  if (!salt || !key) return false;
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(key, 'hex'), Buffer.from(hash, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
 export interface IUserRepository {
   upsertGoogleUser(email: string, name: string, picture?: string): User;
+  registerEmailUser(email: string, name: string, password: string): User;
+  verifyEmailUser(email: string, password: string): User | null;
   getUserById(id: string): User | null;
   getUserByEmail(email: string): User | null;
   listUsers(): User[];
   updateUserRole(id: string, role: 'admin' | 'user'): boolean;
   setUserBlocked(id: string, isBlocked: boolean): boolean;
+  updateUserProfileAndAuth(
+    id: string,
+    data: { name?: string; email?: string; password?: string; role?: 'admin' | 'user' }
+  ): boolean;
+  deleteUser(id: string): boolean;
   createSession(userId: string, ttlDays?: number): string;
   getUserBySessionToken(token: string): User | null;
   deleteSession(token: string): boolean;
@@ -95,6 +123,48 @@ export class SqliteUserRepository implements IUserRepository {
     return this.getUserById(id)!;
   }
 
+  public registerEmailUser(email: string, name: string, password: string): User {
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = this.getUserByEmail(cleanEmail);
+    if (existing) {
+      throw new Error('Já existe uma conta cadastrada com este e-mail.');
+    }
+
+    const id = `user_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const now = new Date().toISOString();
+    const isAdmin = INITIAL_ADMIN_EMAILS.includes(cleanEmail);
+    const role: 'admin' | 'user' = isAdmin ? 'admin' : 'user';
+    const passwordHash = hashPassword(password);
+
+    this.db
+      .prepare(
+        `INSERT INTO users (id, email, name, password_hash, role, is_blocked, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+      )
+      .run(id, cleanEmail, name.trim(), passwordHash, role, now, now);
+
+    this.triggerRemoteSync();
+    return this.getUserById(id)!;
+  }
+
+  public verifyEmailUser(email: string, password: string): User | null {
+    const cleanEmail = email.trim().toLowerCase();
+    const row = this.db
+      .prepare('SELECT id, password_hash FROM users WHERE email = ?')
+      .get(cleanEmail) as { id: string; password_hash?: string } | undefined;
+
+    if (!row || !row.password_hash) {
+      return null;
+    }
+
+    const isValid = verifyPassword(password, row.password_hash);
+    if (!isValid) {
+      return null;
+    }
+
+    return this.getUserById(row.id);
+  }
+
   public getUserById(id: string): User | null {
     const row = this.db
       .prepare('SELECT * FROM users WHERE id = ?')
@@ -124,9 +194,34 @@ export class SqliteUserRepository implements IUserRepository {
   }
 
   public listUsers(): User[] {
-    const rows = this.db
-      .prepare('SELECT * FROM users ORDER BY role DESC, created_at ASC')
-      .all() as Record<string, any>[];
+    let rows: Record<string, any>[] = [];
+    try {
+      rows = this.db
+        .prepare(`
+          SELECT 
+            u.id,
+            u.email,
+            u.name,
+            u.picture,
+            u.role,
+            u.is_blocked,
+            u.created_at,
+            u.updated_at,
+            COALESCE(COUNT(DISTINCT utp.training_id), 0) AS enrollments_count,
+            COALESCE(SUM(CASE WHEN utp.is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_count,
+            COALESCE(COUNT(DISTINCT uc.id), 0) AS certificates_count
+          FROM users u
+          LEFT JOIN user_training_progress utp ON utp.user_id = u.id
+          LEFT JOIN user_certificates uc ON uc.user_id = u.id
+          GROUP BY u.id
+          ORDER BY u.role DESC, u.created_at ASC
+        `)
+        .all() as Record<string, any>[];
+    } catch {
+      rows = this.db
+        .prepare('SELECT * FROM users ORDER BY role DESC, created_at ASC')
+        .all() as Record<string, any>[];
+    }
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -135,6 +230,9 @@ export class SqliteUserRepository implements IUserRepository {
       picture: row.picture ? String(row.picture) : undefined,
       role: (row.role as 'admin' | 'user') || 'user',
       isBlocked: Boolean(row.is_blocked),
+      enrollmentsCount: Number(row.enrollments_count || 0),
+      completedCount: Number(row.completed_count || 0),
+      certificatesCount: Number(row.certificates_count || 0),
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     }));
@@ -160,6 +258,61 @@ export class SqliteUserRepository implements IUserRepository {
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     }
 
+    this.triggerRemoteSync();
+    return res.changes > 0;
+  }
+
+  public updateUserProfileAndAuth(
+    id: string,
+    data: { name?: string; email?: string; password?: string; role?: 'admin' | 'user' }
+  ): boolean {
+    const existing = this.getUserById(id);
+    if (!existing) return false;
+
+    const now = new Date().toISOString();
+    const newName = data.name !== undefined ? data.name.trim() : existing.name;
+    const newEmail = data.email !== undefined ? data.email.trim().toLowerCase() : existing.email;
+    const newRole = data.role !== undefined ? data.role : existing.role;
+
+    if (data.password && data.password.trim().length >= 6) {
+      const passwordHash = hashPassword(data.password.trim());
+      const res = this.db
+        .prepare(`
+          UPDATE users
+          SET name = ?, email = ?, password_hash = ?, role = ?, updated_at = ?
+          WHERE id = ?
+        `)
+        .run(newName, newEmail, passwordHash, newRole, now, id);
+      this.triggerRemoteSync();
+      return res.changes > 0;
+    } else {
+      const res = this.db
+        .prepare(`
+          UPDATE users
+          SET name = ?, email = ?, role = ?, updated_at = ?
+          WHERE id = ?
+        `)
+        .run(newName, newEmail, newRole, now, id);
+      this.triggerRemoteSync();
+      return res.changes > 0;
+    }
+  }
+
+  public deleteUser(id: string): boolean {
+    try {
+      this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM user_training_progress WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM user_certificates WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM training_bookmarks WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM training_lesson_audit WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM user_lesson_audit WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM user_reading_progress WHERE user_id = ?').run(id);
+      this.db.prepare('DELETE FROM book_ratings WHERE user_id = ?').run(id);
+    } catch {
+      // Ignore if some tables do not exist yet
+    }
+
+    const res = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
     this.triggerRemoteSync();
     return res.changes > 0;
   }

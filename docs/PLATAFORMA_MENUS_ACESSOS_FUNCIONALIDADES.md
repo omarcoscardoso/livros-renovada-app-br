@@ -233,9 +233,12 @@ Ao final de cada capítulo, o leitor encontra:
   - *Excluir*: Remove o livro do banco e do storage (o livro padrão "A Igreja em Células" possui trava de segurança contra exclusão acidental).
 
 #### B. Aba "Gestão de Usuários"
-- Lista completa de todos os usuários que já realizaram login com o Google.
-- Exibe avatar, nome, e-mail, papel atual e data de cadastro.
+- Lista completa de todos os usuários registrados (Google OAuth ou E-mail/Senha).
+- Exibe avatar, nome, e-mail, papel atual, data de cadastro e métricas de engajamento (cursos matriculados, concluídos e certificados).
 - **Ações**:
+  - **Editar Usuário (`PUT /api/admin/users/:id`)**: Permite alterar nome completo, e-mail e papel do usuário.
+  - **Redefinir Senha (`PUT /api/admin/users/:id`)**: Permite definir uma nova senha segura para o usuário com validação de tamanho mínimo e criptografia PBKDF2.
+  - **Excluir Usuário (`DELETE /api/admin/users/:id`)**: Remove permanentemente o registro de cadastro e executa limpeza em cascata em sessões, progresso e certificados (com trava de proteção contra autoexclusão do admin logado).
   - **Alterar Papel (`PUT /api/admin/users/:id/role`)**: Promover usuário a `admin` ou rebaixar a `user` (com salvaguarda que impede que o próprio administrador logado remova seu privilégio de admin).
   - **Bloquear / Desbloquear (`PUT /api/admin/users/:id/block`)**: Suspende temporariamente o acesso do usuário à plataforma.
 
@@ -324,10 +327,26 @@ O armazenamento de capas recortadas (`covers/`) e arquivos PDF brutos (`pdfs/`) 
 - `POST /api/books/:id/rate`: Registra avaliação por estrelas (1 a 5) do leitor.
 - `GET /api/books/:id/user-rating`: Retorna a nota atribuída pelo usuário atual.
 
+### Módulo de Treinamentos e LMS (`/api/trainings`)
+- `GET /api/trainings`: Lista os cursos com validação de pré-requisitos de categoria e de curso.
+- `GET /api/trainings/:id`: Detalhes de um curso, syllabus e progresso do aluno autenticado.
+- `POST /api/trainings/:id/lessons/:lessonId/complete`: Conclusão de aula após auditoria de tempo assistido/lido.
+- `GET /api/trainings/categories`: Lista as categorias ministeriais e suas relações hierárquicas.
+- `POST /api/trainings/categories`: Cadastra nova categoria com definição opcional de pré-requisito (Admin).
+- `PUT /api/trainings/categories/:id`: Atualiza categoria e pré-requisito (Admin).
+- `DELETE /api/trainings/categories/:id`: Remove categoria ministerial (Admin).
+- `GET /api/trainings/admin/students`: Lista alunos matriculados e progresso em cursos (Admin).
+- `POST /api/trainings/admin/students/:userId/trainings/:trainingId/complete`: Conclui curso manualmente para um aluno e emite certificado (Admin).
+- `DELETE /api/trainings/admin/students/:userId/trainings/:trainingId/progress`: Reinicia progresso de um aluno (Admin).
+- `GET /api/trainings/admin/certificates`: Lista certificados emitidos para auditoria (Admin).
+- `DELETE /api/trainings/admin/certificates/:id`: Revoga certificado emitido (Admin).
+- `POST /api/trainings/admin/certificates/issue`: Emite certificado manual (Admin).
+- `GET /api/trainings/admin/report`: Relatório analítico consolidado do LMS (Admin).
+
 ### Módulo de Administração (`/api/admin`)
 - `GET /api/admin/stats`: Retorna contadores e estatísticas gerais.
-- `GET /api/admin/users`: Lista todos os usuários cadastrados.
-- `PUT /api/admin/users/:id/role`: Altera o papel de um usuário (`admin` ou `user`).
+- `GET /api/admin/users`: Lista todos os usuários cadastrados e métricas de engajamento em cursos.
+- `PUT /api/admin/users/:id/role`: Altera o papel de um usuário (`admin` ou `user`) — Permite promover alunos a Administrador ou revogar permissões.
 - `PUT /api/admin/users/:id/block`: Bloqueia ou desbloqueia uma conta de usuário.
 - `GET /api/admin/api-key`: Retorna o status e chave mascarada do Gemini.
 - `POST /api/admin/api-key`: Atualiza a chave Gemini do servidor.
@@ -335,8 +354,10 @@ O armazenamento de capas recortadas (`covers/`) e arquivos PDF brutos (`pdfs/`) 
 - `POST /api/admin/admin-key`: Gera ou altera a chave de automação mestra.
 - `PUT /api/admin/books/:id/featured`: Alterna o status de destaque editorial de uma obra.
 
-### Módulo de Autenticação (`/api/auth`)
+### Módulo de Autenticação (`/api/auth`) — Protegido por Rate Limiting
 - `GET /api/auth/config`: Fornece o Client ID público do Google OAuth.
+- `POST /api/auth/register`: Cadastro direto de aluno por e-mail, nome e senha (PBKDF2-SHA-512).
+- `POST /api/auth/login`: Autenticação direta por e-mail e senha com comparação por tempo constante.
 - `POST /api/auth/google`: Valida o token JWT do Google e emite o cookie de sessão `session_token`.
 - `GET /api/auth/me`: Retorna os dados do usuário autenticado e seus capítulos lidos.
 - `POST /api/auth/logout`: Revoga a sessão ativa e exclui os cookies do cliente.

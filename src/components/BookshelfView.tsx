@@ -20,6 +20,8 @@ export interface BookshelfViewProps {
   onReprocessBook: (bookId: string) => void;
   onOpenAdmin: () => void;
   onStartAudiobook?: (bookId: string) => void;
+  onBackToLms?: () => void;
+  isIntegrated?: boolean;
 }
 
 export const BookshelfView: React.FC<BookshelfViewProps> = ({
@@ -35,6 +37,8 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
   onReprocessBook,
   onOpenAdmin,
   onStartAudiobook,
+  onBackToLms,
+  isIntegrated = false,
 }) => {
   return (
     <LibraryScreen
@@ -50,6 +54,8 @@ export const BookshelfView: React.FC<BookshelfViewProps> = ({
       onReprocessBook={onReprocessBook}
       onOpenAdmin={onOpenAdmin}
       onStartAudiobook={onStartAudiobook}
+      onBackToLms={onBackToLms}
+      isIntegrated={isIntegrated}
     />
   );
 };

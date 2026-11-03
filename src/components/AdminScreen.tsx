@@ -119,19 +119,19 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({
   const isSepia = theme === 'sepia';
 
   const pageBg = isDark
-    ? 'bg-[#0F172A] text-slate-100'
+    ? 'bg-[#0F1224] text-slate-100'
     : isSepia
     ? 'bg-[#FBF0D9] text-[#2C2217]'
-    : 'bg-[#F8F9FA] text-slate-900';
+    : 'bg-[#F8F9FC] text-slate-900';
 
   const headerBg = isDark
-    ? 'bg-[#1E293B]/90 border-slate-800'
+    ? 'bg-[#0F1224]/90 border-slate-800/80 backdrop-blur-xl'
     : isSepia
     ? 'bg-[#F5ECD7]/90 border-[#E8DCBF]'
     : 'bg-white/90 border-slate-200/90';
 
   const cardBg = isDark
-    ? 'bg-[#1E293B] border-slate-800 text-slate-100'
+    ? 'bg-[#171B38] border-slate-800 text-slate-100 shadow-xl'
     : isSepia
     ? 'bg-[#F7F3E8] border-[#E3DAC7] text-[#2C2217]'
     : 'bg-white border-slate-200 text-slate-900';

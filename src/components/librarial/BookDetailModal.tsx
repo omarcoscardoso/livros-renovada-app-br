@@ -136,31 +136,18 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
   if (!isOpen || !book) return null;
 
-  const isDark = theme === 'dark' || theme === 'contrast';
-  const isSepia = theme === 'sepia';
+  const modalBg =
+    'bg-[#0F1224] text-slate-100 border-slate-700/80 shadow-2xl shadow-black/90';
 
-  const modalBg = isDark
-    ? 'bg-[#121212] text-[#E0E0E0] border-neutral-800'
-    : isSepia
-    ? 'bg-[#FBF0D9] text-[#5F4B32] border-[#E8DCBF]'
-    : 'bg-white text-slate-900 border-slate-200';
+  const cardSurfaceBg =
+    'bg-[#171B38] border-slate-700/60 text-slate-200';
 
-  const cardSurfaceBg = isDark
-    ? 'bg-[#18181B] border-neutral-800'
-    : isSepia
-    ? 'bg-[#EFE4CC] border-[#DFD4BD]'
-    : 'bg-slate-50 border-slate-200/80';
-
-  const mutedText = isDark
-    ? 'text-neutral-400'
-    : isSepia
-    ? 'text-[#705E4D]'
-    : 'text-slate-500';
+  const mutedText = 'text-slate-400';
 
   const hasRating = reviewsCount > 0;
   const ratingFormatted = hasRating ? currentRating.toFixed(1) : null;
-  const starTextColor = isSepia ? 'text-[#92400E]' : 'text-[#FF7A00]';
-  const starFillColor = isSepia ? 'fill-[#92400E]' : 'fill-[#FF7A00]';
+  const starTextColor = 'text-amber-400';
+  const starFillColor = 'fill-amber-400';
   const rankingText = book.rankingText || (hasRating ? '#01 Recomendado' : 'Lançamento Lumi');
   const totalCh = Math.max(1, book.chapterCount);
   const estimatedPages = book.pageCount || Math.round(totalCh * 18);
@@ -362,13 +349,13 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
               {/* Dual Primary Actions */}
               <div className="pt-3 flex flex-wrap items-center justify-center sm:justify-start gap-3">
-                {/* Botão Primário Sólido (#5C6BC0) */}
+                {/* Botão Primário Sólido - Renovada Emerald Gradient */}
                 <button
                   onClick={() => {
                     onClose();
                     onStartReading(book.id);
                   }}
-                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-[#5C6BC0] hover:bg-[#4D5AB5] text-white font-bold text-sm shadow-xl shadow-[#5C6BC0]/30 transition-all transform hover:scale-[1.02] cursor-pointer"
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold font-outfit text-sm shadow-xl shadow-emerald-950/60 transition-all transform hover:scale-[1.02] cursor-pointer"
                 >
                   <BookOpen className="w-4 h-4" />
                   <span>{hasStarted ? 'Continuar Leitura' : 'Iniciar Leitura'}</span>
@@ -381,7 +368,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                       onClose();
                       onStartAudiobook(book.id);
                     }}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-[#5C6BC0] text-[#5C6BC0] hover:bg-[#5C6BC0]/10 font-bold text-xs transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 font-bold font-outfit text-xs transition-colors cursor-pointer"
                   >
                     <Headphones className="w-4 h-4" />
                     <span>Ouvir Audiolivro</span>
@@ -448,9 +435,9 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
         <div className="flex border-b border-black/5 dark:border-white/5 px-6 sm:px-10">
           <button
             onClick={() => setActiveMediaTab('details')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
+            className={`py-3 px-4 text-xs font-bold font-outfit border-b-2 transition-colors cursor-pointer ${
               activeMediaTab === 'details'
-                ? 'border-[#5C6BC0] text-[#5C6BC0]'
+                ? 'border-emerald-400 text-emerald-400'
                 : 'border-transparent opacity-60 hover:opacity-100'
             }`}
           >
@@ -458,9 +445,9 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           </button>
           <button
             onClick={() => setActiveMediaTab('contents')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`py-3 px-4 text-xs font-bold font-outfit border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeMediaTab === 'contents'
-                ? 'border-[#5C6BC0] text-[#5C6BC0]'
+                ? 'border-emerald-400 text-emerald-400'
                 : 'border-transparent opacity-60 hover:opacity-100'
             }`}
           >
@@ -497,7 +484,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 <p
                   className={`text-sm leading-relaxed ${
                     isSynopsisExpanded ? '' : 'line-clamp-3'
-                  } ${isDark ? 'text-neutral-300' : 'text-slate-700'}`}
+                  } text-slate-300`}
                 >
                   {synopsisText}
                 </p>

@@ -25,6 +25,16 @@ import { createBookRouter } from './src/server/routes/bookRoutes';
 import { createAiRouter } from './src/server/routes/aiRoutes';
 import { createAuthRouter } from './src/server/routes/authRoutes';
 import { createAdminRouter } from './src/server/routes/adminRoutes';
+import {
+  ITrainingRepository,
+  SqliteTrainingRepository,
+} from './src/server/repositories/trainingRepository';
+import {
+  createTrainingRouter,
+  createCertificateRouter,
+  createBookmarkRouter,
+  createLmsReportRouter,
+} from './src/server/routes/trainingRoutes';
 
 dotenv.config();
 
@@ -38,7 +48,8 @@ export function createApiApp(
   customRepo?: IBookRepository,
   customStorage?: IStorageService,
   customUserRepo?: IUserRepository,
-  customConversionService?: GeminiConversionService
+  customConversionService?: GeminiConversionService,
+  customTrainingRepo?: ITrainingRepository
 ) {
   const storageService = customStorage || getStorageService();
   const repo = customRepo || new SqliteBookRepository(undefined, storageService);
@@ -47,10 +58,23 @@ export function createApiApp(
   const userRepo = customUserRepo || new SqliteUserRepository(undefined, storageService);
   const authMiddleware = createAuthMiddleware(userRepo, repo);
 
+  const trainingRepo = customTrainingRepo || new SqliteTrainingRepository();
+  trainingRepo.seedDefaultTrainingsIfNeeded();
+
   const extractor = new PdfExtractorService(storageService);
   const conversionService = customConversionService || new GeminiConversionService(repo, extractor);
 
   const app = express();
+
+  // Cabeçalhos defensivos de segurança HTTP
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
   app.use(express.json({ limit: '25mb' }));
   app.use(cookieParser());
   app.use(authMiddleware.attachUser);
@@ -84,6 +108,24 @@ export function createApiApp(
       requireAdmin: authMiddleware.requireAdmin,
     })
   );
+
+  // LMS Training Routes
+  app.use(
+    '/api/trainings',
+    createTrainingRouter(trainingRepo, {
+      requireAuth: authMiddleware.requireAuth,
+      requireAdmin: authMiddleware.requireAdmin,
+    })
+  );
+
+  // LMS Certificates Routes
+  app.use('/api/certificates', createCertificateRouter(trainingRepo));
+
+  // LMS Bookmarks Routes
+  app.use('/api/bookmarks', createBookmarkRouter(trainingRepo));
+
+  // LMS Admin Reports
+  app.use('/api/admin/lms', createLmsReportRouter(trainingRepo, authMiddleware.requireAdmin));
 
   // AI Router
   app.use('/api', createAiRouter(conversionService));

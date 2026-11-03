@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { IUserRepository } from '../repositories/userRepository';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
+import { authRateLimiter } from '../middleware/rateLimitMiddleware';
 
 const getGoogleClientId = () => process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = new OAuth2Client();
@@ -16,8 +17,86 @@ export function createAuthRouter(userRepo: IUserRepository): Router {
     });
   });
 
+  // Direct registration with name, email and password (No Google OAuth required)
+  router.post('/register', authRateLimiter, (req, res) => {
+    try {
+      const { email, name, password } = req.body;
+      if (!email || typeof email !== 'string' || !email.includes('@')) {
+        return res.status(400).json({ error: 'Informe um endereço de e-mail válido.' });
+      }
+      if (!name || typeof name !== 'string' || name.trim().length < 2) {
+        return res.status(400).json({ error: 'Informe seu nome completo.' });
+      }
+      if (!password || typeof password !== 'string' || password.length < 6) {
+        return res.status(400).json({ error: 'A senha deve conter no mínimo 6 caracteres.' });
+      }
+
+      const user = userRepo.registerEmailUser(email, name, password);
+      const sessionToken = userRepo.createSession(user.id);
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      res.cookie('session_token', sessionToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        path: '/',
+      });
+
+      return res.status(201).json({
+        success: true,
+        user,
+        token: sessionToken,
+      });
+    } catch (err: any) {
+      console.error('[Auth] Erro no cadastro:', err);
+      return res.status(400).json({ error: err?.message || 'Erro ao realizar cadastro.' });
+    }
+  });
+
+  // Direct login with email and password
+  router.post('/login', authRateLimiter, (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+      }
+
+      const user = userRepo.verifyEmailUser(String(email), String(password));
+      if (!user) {
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
+      if (user.isBlocked) {
+        return res.status(403).json({ error: 'Esta conta de usuário foi temporariamente bloqueada.' });
+      }
+
+      const sessionToken = userRepo.createSession(user.id);
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      res.cookie('session_token', sessionToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        path: '/',
+      });
+
+      const readingProgress = userRepo.getUserReadingProgress(user.id);
+
+      return res.json({
+        success: true,
+        user,
+        token: sessionToken,
+        readingProgress,
+      });
+    } catch (err: any) {
+      console.error('[Auth] Erro no login por e-mail:', err);
+      return res.status(500).json({ error: err?.message || 'Falha ao realizar login.' });
+    }
+  });
+
   // Exchange Google ID Token / Credential for a secure session
-  router.post('/google', async (req, res) => {
+  router.post('/google', authRateLimiter, async (req, res) => {
     try {
       const { credential } = req.body;
       if (!credential || typeof credential !== 'string') {

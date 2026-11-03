@@ -147,7 +147,8 @@ export function createDatabaseSnapshot(targetPath: string): boolean {
     if (fs.existsSync(targetPath)) {
       fs.unlinkSync(targetPath);
     }
-    dbInstance.exec(`VACUUM INTO '${targetPath}'`);
+    const safeTargetPath = targetPath.replace(/'/g, "''");
+    dbInstance.exec(`VACUUM INTO '${safeTargetPath}'`);
     return true;
   } catch (err) {
     console.warn('[SQLite] Erro ao criar snapshot seguro via VACUUM INTO:', err);
@@ -223,6 +224,7 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       picture TEXT,
+      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'user',
       is_blocked INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -254,6 +256,89 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       updated_at TEXT NOT NULL,
       UNIQUE(book_id, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS training_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      order_index INTEGER DEFAULT 0,
+      prerequisite_category_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS trainings (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      target_audience TEXT NOT NULL,
+      cover_image_url TEXT NOT NULL,
+      banner_image_url TEXT,
+      is_required INTEGER DEFAULT 0,
+      is_featured INTEGER DEFAULT 0,
+      is_published INTEGER DEFAULT 1,
+      workload_hours REAL DEFAULT 1,
+      complementary_book_id TEXT,
+      order_index INTEGER DEFAULT 0,
+      prerequisite_training_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS training_lessons (
+      id TEXT PRIMARY KEY,
+      training_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      video_type TEXT NOT NULL,
+      video_url TEXT NOT NULL,
+      duration_minutes INTEGER DEFAULT 15,
+      order_index INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_training_progress (
+      user_id TEXT NOT NULL,
+      training_id TEXT NOT NULL,
+      completed_lessons_json TEXT NOT NULL DEFAULT '[]',
+      is_completed INTEGER DEFAULT 0,
+      completed_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, training_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_certificates (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      training_id TEXT NOT NULL,
+      training_title TEXT NOT NULL,
+      workload_hours REAL NOT NULL,
+      issued_at TEXT NOT NULL,
+      validation_code TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS training_bookmarks (
+      user_id TEXT NOT NULL,
+      training_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, training_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_lesson_audit (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      training_id TEXT NOT NULL,
+      lesson_id TEXT NOT NULL,
+      seconds_watched INTEGER DEFAULT 0,
+      duration_seconds INTEGER DEFAULT 0,
+      watch_percent REAL DEFAULT 0,
+      verified_via TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      UNIQUE(user_id, training_id, lesson_id)
+    );
   `);
 
   const cols = db.prepare(`PRAGMA table_info(books)`).all() as Array<{ name: string }>;
@@ -274,8 +359,50 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
     db.exec(`ALTER TABLE books ADD COLUMN is_featured INTEGER DEFAULT 0`);
   }
 
-  // Ensure default admin user cardoso.oliveira@gmail.com exists and has admin privileges (Requirement 4)
-  const adminEmail = 'cardoso.oliveira@gmail.com';
+  // Ensure users table has password_hash column for direct email/password registration
+  const userCols = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+  const userColNames = new Set(userCols.map((c) => c.name));
+  if (!userColNames.has('password_hash')) {
+    try {
+      db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure trainings table has is_published column for publication/draft workflow
+  const trainingCols = db.prepare('PRAGMA table_info(trainings)').all() as Array<{ name: string }>;
+  const trainingColNames = new Set(trainingCols.map((c) => c.name));
+  if (!trainingColNames.has('is_published')) {
+    try {
+      db.exec(`ALTER TABLE trainings ADD COLUMN is_published INTEGER DEFAULT 1`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure trainings table has prerequisite_training_id column for course hierarchy dependencies
+  if (!trainingColNames.has('prerequisite_training_id')) {
+    try {
+      db.exec(`ALTER TABLE trainings ADD COLUMN prerequisite_training_id TEXT`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure training_categories table has prerequisite_category_id column for hierarchy dependencies
+  const categoryCols = db.prepare('PRAGMA table_info(training_categories)').all() as Array<{ name: string }>;
+  const categoryColNames = new Set(categoryCols.map((c) => c.name));
+  if (!categoryColNames.has('prerequisite_category_id')) {
+    try {
+      db.exec(`ALTER TABLE training_categories ADD COLUMN prerequisite_category_id TEXT`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure default admin user exists and has admin privileges (Requirement 4)
+  const adminEmail = process.env.ADMIN_EMAIL || 'cardoso.oliveira@gmail.com';
   const existingAdmin = db.prepare('SELECT id, role FROM users WHERE email = ?').get(adminEmail) as
     | { id: string; role: string }
     | undefined;
