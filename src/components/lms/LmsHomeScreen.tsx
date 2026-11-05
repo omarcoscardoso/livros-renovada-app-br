@@ -188,8 +188,8 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
               : 'border-slate-700/80 shadow-2xl bg-gradient-to-br from-[#171B38] via-[#1B2144] to-[#0F1224]'
           }`}
         >
-          {/* Slides empilhados com cross-fade fluido cinematográfico */}
-          <div className="relative min-h-[380px] sm:min-h-[420px] flex items-center">
+          {/* Slides empilhados com altura compacta e cross-fade cinematográfico */}
+          <div className="relative min-h-[250px] sm:min-h-[280px] md:min-h-[300px] flex items-center">
             {bannerTrainings.map((banner, index) => {
               const isActive = index === activeBannerIndex;
               return (
@@ -227,21 +227,21 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                     />
                   </div>
 
-                  {/* Banner Content */}
-                  <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
+                  {/* Banner Content (Espaçamento compacto e elegante) */}
+                  <div className="relative z-10 p-5 sm:p-7 md:p-8 max-w-2xl space-y-2 sm:space-y-2.5">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-outfit uppercase tracking-wider ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-outfit uppercase tracking-wider ${
                           isLight
                             ? 'bg-blue-100 text-blue-700 border border-blue-200'
                             : 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-inner'
                         }`}
                       >
-                        <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} /> Destaque da Semana
+                        <Sparkles className={`w-3 h-3 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} /> Destaque da Semana
                       </span>
                       {banner.isRequired && (
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-outfit uppercase tracking-wider ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-outfit uppercase tracking-wider ${
                             isLight
                               ? 'bg-amber-100 text-amber-800 border border-amber-200'
                               : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -253,7 +253,7 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                     </div>
 
                     <h1
-                      className={`text-2xl sm:text-4xl font-extrabold font-outfit tracking-tight leading-tight line-clamp-2 ${
+                      className={`text-xl sm:text-2xl md:text-3xl font-extrabold font-outfit tracking-tight leading-snug line-clamp-2 ${
                         isLight ? 'text-slate-900' : 'text-white'
                       }`}
                     >
@@ -261,17 +261,17 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                     </h1>
 
                     <p
-                      className={`text-xs sm:text-sm font-sans line-clamp-2 sm:line-clamp-3 leading-relaxed ${
+                      className={`text-xs sm:text-sm font-sans line-clamp-2 leading-relaxed opacity-90 ${
                         isLight ? 'text-slate-600' : 'text-slate-300'
                       }`}
                     >
                       {banner.description}
                     </p>
 
-                    <div className="pt-2 flex flex-wrap items-center gap-3 sm:gap-4">
+                    <div className="pt-1.5 flex flex-wrap items-center gap-2.5 sm:gap-3">
                       <button
                         onClick={() => handleCardClick(banner)}
-                        className={`inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold font-outfit text-xs sm:text-sm shadow-xl transition-all cursor-pointer transform hover:scale-[1.02] ${
+                        className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold font-outfit text-xs sm:text-sm shadow-xl transition-all cursor-pointer transform hover:scale-[1.02] ${
                           banner.isLockedByPrerequisite && !isAdmin
                             ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-950/40'
                             : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-950/40'
@@ -279,12 +279,12 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                       >
                         {banner.isLockedByPrerequisite && !isAdmin ? (
                           <>
-                            <Lock className="w-4 h-4" />
+                            <Lock className="w-3.5 h-3.5" />
                             <span>Bloqueado (Requer {banner.prerequisiteTrainingTitle || banner.prerequisiteCategoryName})</span>
                           </>
                         ) : (
                           <>
-                            <Play className="w-4 h-4 fill-white" />
+                            <Play className="w-3.5 h-3.5 fill-white" />
                             <span>
                               {banner.isCompleted
                                 ? 'Rever Treinamento'
@@ -299,13 +299,13 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                       {banner.complementaryBookId && (
                         <button
                           onClick={onOpenLibrary}
-                          className={`inline-flex items-center gap-1.5 px-4 py-3 rounded-2xl font-bold font-outfit text-xs transition-all cursor-pointer ${
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold font-outfit text-xs transition-all cursor-pointer ${
                             isLight
                               ? 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 shadow-sm'
                               : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200'
                           }`}
                         >
-                          <BookOpen className="w-4 h-4 text-emerald-500" />
+                          <BookOpen className="w-3.5 h-3.5 text-emerald-500" />
                           <span>Livro de Apoio</span>
                         </button>
                       )}
@@ -318,15 +318,15 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
 
           {/* Banner Controls & Dots */}
           {bannerTrainings.length > 1 && (
-            <div className="relative z-20 px-6 sm:px-10 pb-6 flex items-center justify-between">
+            <div className="relative z-20 px-5 sm:px-8 pb-3.5 pt-0 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 {bannerTrainings.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveBannerIndex(i)}
-                    className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                    className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                       i === activeBannerIndex
-                        ? 'w-7 bg-blue-500'
+                        ? 'w-6 bg-blue-500'
                         : isLight
                         ? 'w-2 bg-slate-300 hover:bg-slate-400'
                         : 'w-2 bg-white/20 hover:bg-white/40'
@@ -336,28 +336,28 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                 ))}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   onClick={handlePrevBanner}
-                  className={`p-2.5 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                  className={`p-1.5 sm:p-2 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                     isLight
                       ? 'bg-white/90 hover:bg-white text-slate-700 border-slate-300 shadow-sm'
                       : 'bg-slate-800/90 hover:bg-slate-700 text-white border-slate-700 shadow-lg'
                   }`}
                   aria-label="Anterior"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 <button
                   onClick={handleNextBanner}
-                  className={`p-2.5 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                  className={`p-1.5 sm:p-2 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                     isLight
                       ? 'bg-white/90 hover:bg-white text-slate-700 border-slate-300 shadow-sm'
                       : 'bg-slate-800/90 hover:bg-slate-700 text-white border-slate-700 shadow-lg'
                   }`}
                   aria-label="Próximo"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
             </div>
