@@ -1488,4 +1488,154 @@ describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
       }
     });
   });
+
+  describe('Ordenação de Cursos e Destaque na Categoria (isCategoryFeatured)', () => {
+    it('deve ordenar cursos dentro de uma categoria do mais antigo para o mais recente por padrão', () => {
+      // Cria 3 cursos na mesma categoria em momentos distintos
+      const c1 = repo.createTraining({
+        title: 'Curso Antigo (Janeiro)',
+        category: 'Teologia',
+        description: 'Primeiro curso criado',
+      });
+
+      const c2 = repo.createTraining({
+        title: 'Curso Intermediário (Fevereiro)',
+        category: 'Teologia',
+        description: 'Segundo curso criado',
+      });
+
+      const c3 = repo.createTraining({
+        title: 'Curso Recente (Março)',
+        category: 'Teologia',
+        description: 'Terceiro curso criado',
+      });
+
+      // Simula datas criadas explicitamente para garantir ordem temporal estrita
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-01-10T10:00:00.000Z', c1.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-02-10T10:00:00.000Z', c2.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-03-10T10:00:00.000Z', c3.id);
+
+      const list = repo.getAllTrainings(undefined, 'Teologia');
+      expect(list.length).toBe(3);
+      // O mais antigo deve vir primeiro, e o mais recente por último
+      expect(list[0].id).toBe(c1.id);
+      expect(list[0].title).toBe('Curso Antigo (Janeiro)');
+      expect(list[1].id).toBe(c2.id);
+      expect(list[1].title).toBe('Curso Intermediário (Fevereiro)');
+      expect(list[2].id).toBe(c3.id);
+      expect(list[2].title).toBe('Curso Recente (Março)');
+    });
+
+    it('deve colocar o curso com "Destaque na Categoria" em primeiro lugar na categoria, mesmo sendo o mais recente', () => {
+      const cOld = repo.createTraining({
+        title: 'Liderança Básica',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: false,
+      });
+
+      const cMid = repo.createTraining({
+        title: 'Liderança Intermediária',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: false,
+      });
+
+      const cNew = repo.createTraining({
+        title: 'Liderança de Alta Performance (Destaque)',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: true,
+      });
+
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-01-01T00:00:00.000Z', cOld.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-02-01T00:00:00.000Z', cMid.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-03-01T00:00:00.000Z', cNew.id);
+
+      const list = repo.getAllTrainings(undefined, 'Liderança Avançada');
+      expect(list.length).toBe(3);
+      // O curso destacado na categoria DEVE vir em primeiro lugar
+      expect(list[0].id).toBe(cNew.id);
+      expect(list[0].isCategoryFeatured).toBe(true);
+
+      // Os demais seguem a ordem cronológica do mais antigo para o mais recente
+      expect(list[1].id).toBe(cOld.id);
+      expect(list[1].isCategoryFeatured).toBe(false);
+      expect(list[2].id).toBe(cMid.id);
+      expect(list[2].isCategoryFeatured).toBe(false);
+
+      // Se remover o destaque na categoria, volta para a ordem cronológica estrita
+      repo.updateTraining(cNew.id, { isCategoryFeatured: false });
+      const listAfter = repo.getAllTrainings(undefined, 'Liderança Avançada');
+      expect(listAfter[0].id).toBe(cOld.id);
+      expect(listAfter[1].id).toBe(cMid.id);
+      expect(listAfter[2].id).toBe(cNew.id);
+    });
+
+    it('deve persistir e permitir alternar Destaque na Página Inicial e Destaque na Categoria via API', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/api/trainings',
+        createTrainingRouter(repo, {
+          requireAuth: (_req, _res, next) => next(),
+          requireAdmin: (_req, _res, next) => next(),
+        })
+      );
+
+      const server = app.listen(0);
+      const port = (server.address() as any).port;
+
+      try {
+        // Criar curso com ambos destaques
+        const resCreate = await fetch(`http://127.0.0.1:${port}/api/trainings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Curso de Missões Urbanas',
+            category: 'Missões',
+            isFeatured: true,
+            isCategoryFeatured: true,
+          }),
+        });
+
+        expect(resCreate.status).toBe(201);
+        const dataCreate = await resCreate.json();
+        expect(dataCreate.training.isFeatured).toBe(true);
+        expect(dataCreate.training.isCategoryFeatured).toBe(true);
+
+        const trainingId = dataCreate.training.id;
+
+        // Alterar via PUT desativando apenas o destaque de categoria
+        const resUpdate = await fetch(`http://127.0.0.1:${port}/api/trainings/${trainingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isCategoryFeatured: false,
+          }),
+        });
+
+        expect(resUpdate.status).toBe(200);
+        const dataUpdate = await resUpdate.json();
+        expect(dataUpdate.training.isFeatured).toBe(true); // manteve
+        expect(dataUpdate.training.isCategoryFeatured).toBe(false); // atualizou
+
+        // Consultar diretamente pelo repositório
+        const fetched = repo.getTrainingById(trainingId);
+        expect(fetched?.isFeatured).toBe(true);
+        expect(fetched?.isCategoryFeatured).toBe(false);
+      } finally {
+        server.close();
+      }
+    });
+  });
 });

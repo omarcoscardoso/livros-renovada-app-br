@@ -324,9 +324,9 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     const insertTrainingStmt = this.db.prepare(`
       INSERT INTO trainings (
         id, title, description, category, target_audience, cover_image_url,
-        banner_image_url, is_required, is_featured, is_published, workload_hours,
+        banner_image_url, is_required, is_featured, is_category_featured, is_published, workload_hours,
         complementary_book_id, order_index, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertLessonStmt = this.db.prepare(`
@@ -347,6 +347,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         t.bannerImageUrl,
         t.isRequired,
         t.isFeatured,
+        (t as any).isCategoryFeatured ? 1 : 0,
         1,
         t.workloadHours,
         t.complementaryBookId,
@@ -393,7 +394,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       params.push(query, query, query);
     }
 
-    sql += ' ORDER BY order_index ASC, created_at DESC';
+    sql += ' ORDER BY is_category_featured DESC, order_index ASC, created_at ASC';
 
     const rows = this.db.prepare(sql).all(...params) as any[];
 
@@ -530,6 +531,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         bannerImageUrl: r.banner_image_url,
         isRequired: Boolean(r.is_required),
         isFeatured: Boolean(r.is_featured),
+        isCategoryFeatured: Boolean(r.is_category_featured),
         isPublished: Boolean(r.is_published ?? 1),
         workloadHours: Number(r.workload_hours || 1),
         complementaryBookId: r.complementary_book_id,
@@ -655,6 +657,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       bannerImageUrl: r.banner_image_url,
       isRequired: Boolean(r.is_required),
       isFeatured: Boolean(r.is_featured),
+      isCategoryFeatured: Boolean(r.is_category_featured),
       isPublished,
       workloadHours: Number(r.workload_hours || 1),
       complementaryBookId: r.complementary_book_id,
@@ -697,9 +700,9 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     this.db.prepare(`
       INSERT INTO trainings (
         id, title, description, category, target_audience, cover_image_url,
-        banner_image_url, is_required, is_featured, is_published, workload_hours,
+        banner_image_url, is_required, is_featured, is_category_featured, is_published, workload_hours,
         complementary_book_id, order_index, prerequisite_training_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.title || 'Novo Treinamento',
@@ -710,6 +713,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.bannerImageUrl || null,
       data.isRequired ? 1 : 0,
       data.isFeatured ? 1 : 0,
+      data.isCategoryFeatured ? 1 : 0,
       isPublished,
       Number(data.workloadHours || 1),
       data.complementaryBookId || null,
@@ -777,6 +781,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         banner_image_url = ?,
         is_required = ?,
         is_featured = ?,
+        is_category_featured = ?,
         is_published = ?,
         workload_hours = ?,
         complementary_book_id = ?,
@@ -793,6 +798,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.bannerImageUrl ?? existing.bannerImageUrl,
       data.isRequired !== undefined ? (data.isRequired ? 1 : 0) : (existing.isRequired ? 1 : 0),
       data.isFeatured !== undefined ? (data.isFeatured ? 1 : 0) : (existing.isFeatured ? 1 : 0),
+      data.isCategoryFeatured !== undefined ? (data.isCategoryFeatured ? 1 : 0) : (existing.isCategoryFeatured ? 1 : 0),
       data.isPublished !== undefined ? (data.isPublished ? 1 : 0) : (existing.isPublished ? 1 : 0),
       data.workloadHours !== undefined ? Number(data.workloadHours) : existing.workloadHours,
       data.complementaryBookId !== undefined ? data.complementaryBookId : existing.complementaryBookId,

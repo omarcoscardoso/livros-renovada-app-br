@@ -98,7 +98,23 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
 
     return allCats
       .map((cat) => {
-        const items = trainings.filter((t) => t.category.toLowerCase() === cat.toLowerCase());
+        const items = trainings
+          .filter((t) => t.category.toLowerCase() === cat.toLowerCase())
+          .sort((a, b) => {
+            // 1. Destaque na categoria sempre em 1º lugar
+            const aCatFeat = a.isCategoryFeatured ? 1 : 0;
+            const bCatFeat = b.isCategoryFeatured ? 1 : 0;
+            if (aCatFeat !== bCatFeat) {
+              return bCatFeat - aCatFeat;
+            }
+            // 2. Ordem cronológica por antiguidade: primeiro o mais antigo e segue para o mais recente (createdAt ASC)
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            if (aTime !== bTime) {
+              return aTime - bTime;
+            }
+            return (a.orderIndex || 0) - (b.orderIndex || 0);
+          });
         const key = cat.toLowerCase();
         return {
           title: defaultTitles[key] || cat,
@@ -349,17 +365,26 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                       }`}
                     />
 
-                    {/* Tag Obrigatória / Bloqueado */}
-                    {training.isLockedByPrerequisite ? (
-                      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-outfit uppercase tracking-wider bg-slate-900/90 text-amber-300 border border-amber-500/40 shadow-md flex items-center gap-1 backdrop-blur-md">
-                        <Lock className="w-2.5 h-2.5 text-amber-400" />
-                        <span>Requer: {training.prerequisiteTrainingTitle || training.prerequisiteCategoryName}</span>
-                      </span>
-                    ) : training.isRequired ? (
-                      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-outfit uppercase tracking-wider bg-rose-500/90 text-white shadow-md">
-                        Obrigatória
-                      </span>
-                    ) : null}
+                    {/* Tag Obrigatória / Bloqueado / Destaque na Categoria */}
+                    <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start z-10 pointer-events-none">
+                      {training.isLockedByPrerequisite ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold font-outfit uppercase tracking-wider bg-slate-900/90 text-amber-300 border border-amber-500/40 shadow-md flex items-center gap-1 backdrop-blur-md">
+                          <Lock className="w-2.5 h-2.5 text-amber-400" />
+                          <span>Requer: {training.prerequisiteTrainingTitle || training.prerequisiteCategoryName}</span>
+                        </span>
+                      ) : training.isRequired ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold font-outfit uppercase tracking-wider bg-rose-500/90 text-white shadow-md">
+                          Obrigatória
+                        </span>
+                      ) : null}
+
+                      {training.isCategoryFeatured && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold font-outfit uppercase tracking-wider bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md flex items-center gap-1 backdrop-blur-md border border-amber-300/30">
+                          <Sparkles className="w-2.5 h-2.5 fill-current text-amber-100" />
+                          <span>Destaque</span>
+                        </span>
+                      )}
+                    </div>
 
                     {/* Lock overlay for locked courses */}
                     {training.isLockedByPrerequisite && (
