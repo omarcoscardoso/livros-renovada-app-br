@@ -10,6 +10,7 @@ import {
   Trash2,
   GraduationCap,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import { Training } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
@@ -21,6 +22,8 @@ export interface CoursesTabProps {
   publicationFilter: 'all' | 'published' | 'draft';
   setPublicationFilter: (filter: 'all' | 'published' | 'draft') => void;
   onTogglePublish: (training: Training) => void;
+  onToggleCategoryFeatured?: (training: Training) => void;
+  onToggleHomeFeatured?: (training: Training) => void;
   onOpenEditTraining: (training: Training) => void;
   onDeleteTraining: (id: string, title: string) => void;
   onManageLessons: (trainingId: string, lessons?: any[]) => void;
@@ -35,6 +38,8 @@ export const CoursesTab: React.FC<CoursesTabProps> = ({
   publicationFilter,
   setPublicationFilter,
   onTogglePublish,
+  onToggleCategoryFeatured,
+  onToggleHomeFeatured,
   onOpenEditTraining,
   onDeleteTraining,
   onManageLessons,
@@ -171,6 +176,20 @@ export const CoursesTab: React.FC<CoursesTabProps> = ({
                     <span>Requer: {training.prerequisiteTrainingTitle}</span>
                   </span>
                 )}
+
+                {training.isFeatured && (
+                  <span className="px-2 py-1 text-xs font-bold rounded-lg bg-blue-600/90 text-white backdrop-blur-md flex items-center space-x-1 shadow">
+                    <Sparkles className="w-3 h-3 fill-current text-blue-200" />
+                    <span>Destaque Home</span>
+                  </span>
+                )}
+
+                {training.isCategoryFeatured && (
+                  <span className="px-2 py-1 text-xs font-bold rounded-lg bg-amber-500/90 text-white backdrop-blur-md flex items-center space-x-1 shadow">
+                    <Sparkles className="w-3 h-3 fill-current text-amber-200" />
+                    <span>Destaque Categoria</span>
+                  </span>
+                )}
               </div>
 
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-xs text-slate-200">
@@ -230,6 +249,46 @@ export const CoursesTab: React.FC<CoursesTabProps> = ({
                       </>
                     )}
                   </button>
+                </div>
+
+                {/* Destaques (Home & Categoria) */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-400">Destaques:</span>
+                  <div className="flex items-center gap-1.5">
+                    {onToggleHomeFeatured && (
+                      <button
+                        onClick={() => onToggleHomeFeatured(training)}
+                        title={training.isFeatured ? 'Remover destaque da Home' : 'Destacar na Página Inicial'}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 border cursor-pointer ${
+                          training.isFeatured
+                            ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30'
+                            : isLight
+                            ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Sparkles className={`w-3 h-3 ${training.isFeatured ? 'fill-current' : ''}`} />
+                        <span>Home</span>
+                      </button>
+                    )}
+
+                    {onToggleCategoryFeatured && (
+                      <button
+                        onClick={() => onToggleCategoryFeatured(training)}
+                        title={training.isCategoryFeatured ? 'Remover destaque da Categoria' : 'Destacar em 1º na Categoria'}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 border cursor-pointer ${
+                          training.isCategoryFeatured
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30'
+                            : isLight
+                            ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Sparkles className={`w-3 h-3 ${training.isCategoryFeatured ? 'fill-current' : ''}`} />
+                        <span>Categoria</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Secondary Navigation & Management Actions */}

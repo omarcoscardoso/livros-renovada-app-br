@@ -17,6 +17,7 @@ export interface TrainingModalProps {
     bannerImageUrl: string;
     isRequired: boolean;
     isFeatured: boolean;
+    isCategoryFeatured: boolean;
     isPublished: boolean;
     workloadHours: number;
     complementaryBookId: string;
@@ -32,6 +33,7 @@ export interface TrainingModalProps {
       bannerImageUrl: string;
       isRequired: boolean;
       isFeatured: boolean;
+      isCategoryFeatured: boolean;
       isPublished: boolean;
       workloadHours: number;
       complementaryBookId: string;
@@ -329,7 +331,7 @@ export const TrainingModal: React.FC<TrainingModalProps> = ({
             />
           </div>
 
-          <div className="flex items-center space-x-6 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
             <label className="flex items-center space-x-2 text-xs font-medium cursor-pointer">
               <input
                 type="checkbox"
@@ -348,6 +350,16 @@ export const TrainingModal: React.FC<TrainingModalProps> = ({
                 className="rounded text-blue-600 focus:ring-blue-500"
               />
               <span>Destaque na Página Inicial</span>
+            </label>
+
+            <label className="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                checked={trainingForm.isCategoryFeatured}
+                onChange={(e) => setTrainingForm({ ...trainingForm, isCategoryFeatured: e.target.checked })}
+                className="rounded text-amber-500 focus:ring-amber-500"
+              />
+              <span>Destaque na Categoria</span>
             </label>
           </div>
 
