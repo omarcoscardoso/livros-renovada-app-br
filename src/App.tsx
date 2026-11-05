@@ -1077,7 +1077,7 @@ function LibraryApp({
           />
 
           <div
-            className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
+            className={`flex-1 flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden transition-all duration-300 ${
               isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
             }`}
           >
@@ -1106,7 +1106,7 @@ function LibraryApp({
               onToggleCollapse={handleToggleSidebarCollapse}
             />
 
-            <main className="flex-1 px-4 sm:px-8 py-6 max-w-7xl w-full mx-auto">
+            <main className="flex-1 px-3 sm:px-6 md:px-8 py-5 sm:py-6 max-w-7xl w-full mx-auto min-w-0 overflow-x-hidden">
               {currentView === 'lms-home' && (
                 <LmsHomeScreen
                   trainings={filteredTrainings}

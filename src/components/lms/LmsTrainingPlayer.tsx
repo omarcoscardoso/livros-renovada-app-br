@@ -430,7 +430,7 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
   }
 
   return (
-    <div className="space-y-6 pb-20 max-w-7xl mx-auto">
+    <div className="space-y-6 pb-20 max-w-7xl mx-auto w-full min-w-0 overflow-x-hidden">
       {/* Aviso de Administrador quando bloqueado por pré-requisito */}
       {currentTraining.isLockedByPrerequisite && (
         <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs sm:text-sm flex items-center gap-3">
@@ -595,18 +595,18 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
             )}
           </div>
 
-          {/* Barra de Ação Rápida e Informações da Aula Atual */}
+          {/* Barra de Ação Rápida e Informações da Aula Atual (Otimizado para Mobile e Tablet) */}
           {activeLesson && (
             <div
-              className={`p-5 sm:p-6 rounded-3xl border shadow-xl space-y-4 ${
+              className={`p-4 sm:p-5 md:p-6 rounded-3xl border shadow-xl space-y-4 max-w-full overflow-hidden ${
                 isLight
                   ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50'
                   : 'bg-[#171B38] border-slate-700/80 shadow-xl text-white'
               }`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 min-w-0">
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs flex-wrap">
                     <span
                       className={`font-outfit font-bold uppercase tracking-wider ${
                         isLight ? 'text-blue-600' : 'text-blue-400'
@@ -634,7 +634,7 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                   </div>
 
                   <h2
-                    className={`text-lg sm:text-2xl font-extrabold font-outfit tracking-tight leading-snug ${
+                    className={`text-lg sm:text-xl md:text-2xl font-extrabold font-outfit tracking-tight leading-snug break-words ${
                       isLight ? 'text-slate-900' : 'text-white'
                     }`}
                   >
@@ -642,20 +642,20 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                   </h2>
                 </div>
 
-                <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-start md:justify-end pt-1 md:pt-0">
                   {externalVideoUrl && (
                     <a
                       href={externalVideoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`inline-flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border text-xs font-outfit font-semibold transition-all cursor-pointer ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl sm:rounded-2xl border text-xs font-outfit font-semibold transition-all cursor-pointer ${
                         isLight
                           ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                           : 'bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white'
                       }`}
                       title="Abrir vídeo em nova aba caso prefira assistir externamente"
                     >
-                      <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
+                      <ExternalLink className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                       <span className="hidden sm:inline">Abrir Externo</span>
                     </a>
                   )}
@@ -665,14 +665,14 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                     <button
                       onClick={() => isAdmin && handleToggleComplete(activeLesson.id, true)}
                       disabled={!isAdmin || isUpdating}
-                      className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold font-outfit transition-all shadow-lg ${
+                      className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl sm:rounded-2xl text-xs font-bold font-outfit transition-all shadow-lg ${
                         isLight
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40'
                       } ${isAdmin ? 'cursor-pointer hover:bg-emerald-500/30' : 'cursor-default'}`}
                       title={isAdmin ? 'Clique para desmarcar (Privilégio Administrador)' : 'Aula concluída e auditada'}
                     >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 stroke-[3]" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 stroke-[3] shrink-0" />
                       <span>Aula Concluída ✓</span>
                     </button>
                   ) : (
@@ -681,10 +681,10 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                         <button
                           onClick={() => handleToggleComplete(activeLesson.id, true)}
                           disabled={isUpdating}
-                          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border text-xs font-outfit font-bold bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25 transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl sm:rounded-2xl border text-xs font-outfit font-bold bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25 transition-all cursor-pointer"
                           title="Aprovação imediata de auditoria (Privilégio Administrador)"
                         >
-                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                           <span className="hidden sm:inline">Liberar (Admin)</span>
                         </button>
                       )}
@@ -692,7 +692,7 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                       <button
                         onClick={() => handleToggleComplete(activeLesson.id)}
                         disabled={!isUnlocked || isUpdating}
-                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold font-outfit transition-all shadow-lg ${
+                        className={`inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 md:px-5 py-2.5 rounded-xl sm:rounded-2xl text-xs font-bold font-outfit transition-all shadow-lg max-w-full ${
                           isUnlocked
                             ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/40 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50'
                             : isLight
@@ -703,13 +703,16 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                       >
                         {isUnlocked ? (
                           <>
-                            <Check className="w-4 h-4 stroke-[3]" />
+                            <Check className="w-4 h-4 stroke-[3] shrink-0" />
                             <span>Concluir Aula</span>
                           </>
                         ) : (
                           <>
-                            <Lock className="w-4 h-4 text-amber-500/80" />
-                            <span>Aguardando Visualização ({watchPercent}%)</span>
+                            <Lock className="w-4 h-4 text-amber-500/80 shrink-0" />
+                            {/* Texto adaptativo para mobile e tablet sem cortar */}
+                            <span className="inline sm:hidden">Aguardando ({watchPercent}%)</span>
+                            <span className="hidden sm:inline md:hidden lg:inline">Aguardando Visualização ({watchPercent}%)</span>
+                            <span className="hidden md:inline lg:hidden">Aguardando ({watchPercent}%)</span>
                           </>
                         )}
                       </button>
@@ -749,14 +752,14 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                 </div>
               ) : (
                 <div
-                  className={`p-3.5 rounded-2xl border space-y-2.5 ${
+                  className={`p-3 sm:p-3.5 rounded-2xl border space-y-2.5 max-w-full overflow-hidden ${
                     isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131735] border-slate-700/70'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 text-xs min-w-0">
+                    <div className="flex items-start sm:items-center gap-2 min-w-0">
                       <div
-                        className={`p-1.5 rounded-xl ${
+                        className={`p-1.5 rounded-xl shrink-0 ${
                           isUnlocked
                             ? 'bg-emerald-500/20 text-emerald-400'
                             : 'bg-amber-500/20 text-amber-400'
@@ -764,11 +767,11 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                       >
                         {isUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                       </div>
-                      <div>
-                        <p className="font-bold font-outfit">
+                      <div className="min-w-0">
+                        <p className="font-bold font-outfit truncate">
                           {isUnlocked ? 'Requisito de Visualização Atingido!' : 'Auditoria de Visualização Obrigatória'}
                         </p>
-                        <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                        <p className={`text-[11px] line-clamp-2 sm:line-clamp-none ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                           {activeLesson.videoType === 'youtube'
                             ? 'Assista ao vídeo no player acima (mínimo 80%) para liberar a conclusão.'
                             : 'Mantenha a aula aberta e ativa nesta aba para liberar a conclusão.'}
@@ -776,7 +779,7 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start pt-1.5 sm:pt-0 border-t sm:border-0 border-current/10 shrink-0">
                       <span
                         className={`text-sm font-mono font-extrabold ${
                           isUnlocked ? 'text-emerald-500' : 'text-amber-500'
