@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -49,13 +49,59 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
   }, [trainings]);
 
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [isBannerPaused, setIsBannerPaused] = useState(false);
+  const touchStartXRef = useRef<number | null>(null);
 
-  const handlePrevBanner = () => {
+  const handlePrevBanner = useCallback(() => {
     setActiveBannerIndex((prev) => (prev > 0 ? prev - 1 : bannerTrainings.length - 1));
+  }, [bannerTrainings.length]);
+
+  const handleNextBanner = useCallback(() => {
+    setActiveBannerIndex((prev) => (prev < bannerTrainings.length - 1 ? prev + 1 : 0));
+  }, [bannerTrainings.length]);
+
+  // Carrossel dinâmico: auto-play a cada 6 segundos com pausa inteligente
+  useEffect(() => {
+    if (bannerTrainings.length <= 1 || isBannerPaused) return;
+
+    const timer = setInterval(() => {
+      setActiveBannerIndex((prev) => (prev < bannerTrainings.length - 1 ? prev + 1 : 0));
+    }, 6000);
+
+    return () => clearInterval(timer);
+  }, [bannerTrainings.length, isBannerPaused]);
+
+  // Suporte a swipe por toque no mobile/tablet para o carrossel
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    setIsBannerPaused(true);
   };
 
-  const handleNextBanner = () => {
-    setActiveBannerIndex((prev) => (prev < bannerTrainings.length - 1 ? prev + 1 : 0));
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current !== null) {
+      const touchEndX = e.changedTouches[0].clientX;
+      const diff = touchStartXRef.current - touchEndX;
+      if (diff > 45) {
+        handleNextBanner();
+      } else if (diff < -45) {
+        handlePrevBanner();
+      }
+      touchStartXRef.current = null;
+    }
+    setIsBannerPaused(false);
+  };
+
+  // Referências para rolagem horizontal suave das categorias no PC
+  const categoryRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const scrollCategory = (catKey: string, direction: 'left' | 'right') => {
+    const el = categoryRowRefs.current[catKey];
+    if (!el) return;
+    const scrollDistance = Math.max(320, Math.round(el.clientWidth * 0.75));
+    el.scrollBy({
+      left: direction === 'left' ? -scrollDistance : scrollDistance,
+      behavior: 'smooth',
+    });
   };
 
   const currentBanner = bannerTrainings[activeBannerIndex];
@@ -129,136 +175,161 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
 
   return (
     <div className="space-y-10 pb-16">
-      {/* 1. TOP CAROUSEL OF BANNERS (Inspired by ZAMPlay swiper-container) */}
-      {currentBanner && (
+      {/* 1. TOP CAROUSEL OF BANNERS (Dinâmico com transição suave e moderna) */}
+      {bannerTrainings.length > 0 && (
         <section
+          onMouseEnter={() => setIsBannerPaused(true)}
+          onMouseLeave={() => setIsBannerPaused(false)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           className={`relative rounded-3xl overflow-hidden border transition-all ${
             isLight
               ? 'border-slate-200 bg-gradient-to-br from-blue-50/90 via-white to-indigo-50/80 shadow-xl'
               : 'border-slate-700/80 shadow-2xl bg-gradient-to-br from-[#171B38] via-[#1B2144] to-[#0F1224]'
           }`}
         >
-          {/* Background Image with Ambient Overlay */}
-          <div className="absolute inset-0 z-0">
-            <img
-              src={currentBanner.bannerImageUrl || currentBanner.coverImageUrl}
-              alt=""
-              className="w-full h-full object-cover opacity-25 filter blur-[1px] scale-105"
-            />
-            <div
-              className={`absolute inset-0 ${
-                isLight
-                  ? 'bg-gradient-to-r from-white via-white/85 to-transparent'
-                  : 'bg-gradient-to-r from-[#0F1224] via-[#0F1224]/80 to-transparent'
-              }`}
-            />
-            <div
-              className={`absolute inset-0 ${
-                isLight
-                  ? 'bg-gradient-to-t from-white/90 via-transparent to-transparent'
-                  : 'bg-gradient-to-t from-[#0F1224] via-transparent to-transparent'
-              }`}
-            />
-          </div>
-
-          <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-outfit uppercase tracking-wider ${
-                  isLight
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                    : 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-inner'
-                }`}
-              >
-                <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} /> Destaque da Semana
-              </span>
-              {currentBanner.isRequired && (
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-outfit uppercase tracking-wider ${
-                    isLight
-                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+          {/* Slides empilhados com cross-fade fluido cinematográfico */}
+          <div className="relative min-h-[380px] sm:min-h-[420px] flex items-center">
+            {bannerTrainings.map((banner, index) => {
+              const isActive = index === activeBannerIndex;
+              return (
+                <div
+                  key={banner.id}
+                  className={`absolute inset-0 w-full h-full transition-all duration-700 ease-in-out flex flex-col justify-between ${
+                    isActive
+                      ? 'opacity-100 z-10 pointer-events-auto transform-none'
+                      : 'opacity-0 z-0 pointer-events-none scale-[1.01]'
                   }`}
+                  aria-hidden={!isActive}
                 >
-                  Obrigatória
-                </span>
-              )}
-            </div>
+                  {/* Background Image with Ambient Overlay */}
+                  <div className="absolute inset-0 z-0 overflow-hidden">
+                    <img
+                      src={banner.bannerImageUrl || banner.coverImageUrl}
+                      alt=""
+                      className={`w-full h-full object-cover filter blur-[1px] transition-transform duration-1000 ease-out ${
+                        isActive ? 'scale-105 opacity-25' : 'scale-100 opacity-0'
+                      }`}
+                    />
+                    <div
+                      className={`absolute inset-0 ${
+                        isLight
+                          ? 'bg-gradient-to-r from-white via-white/85 to-transparent'
+                          : 'bg-gradient-to-r from-[#0F1224] via-[#0F1224]/80 to-transparent'
+                      }`}
+                    />
+                    <div
+                      className={`absolute inset-0 ${
+                        isLight
+                          ? 'bg-gradient-to-t from-white/90 via-transparent to-transparent'
+                          : 'bg-gradient-to-t from-[#0F1224] via-transparent to-transparent'
+                      }`}
+                    />
+                  </div>
 
-            <h1
-              className={`text-2xl sm:text-4xl font-extrabold font-outfit tracking-tight leading-tight ${
-                isLight ? 'text-slate-900' : 'text-white'
-              }`}
-            >
-              {currentBanner.title}
-            </h1>
+                  {/* Banner Content */}
+                  <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-outfit uppercase tracking-wider ${
+                          isLight
+                            ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-inner'
+                        }`}
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} /> Destaque da Semana
+                      </span>
+                      {banner.isRequired && (
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-outfit uppercase tracking-wider ${
+                            isLight
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          }`}
+                        >
+                          Obrigatória
+                        </span>
+                      )}
+                    </div>
 
-            <p
-              className={`text-xs sm:text-sm font-sans line-clamp-2 leading-relaxed ${
-                isLight ? 'text-slate-600' : 'text-slate-300'
-              }`}
-            >
-              {currentBanner.description}
-            </p>
+                    <h1
+                      className={`text-2xl sm:text-4xl font-extrabold font-outfit tracking-tight leading-tight line-clamp-2 ${
+                        isLight ? 'text-slate-900' : 'text-white'
+                      }`}
+                    >
+                      {banner.title}
+                    </h1>
 
-            <div className="pt-2 flex flex-wrap items-center gap-3 sm:gap-4">
-              <button
-                onClick={() => handleCardClick(currentBanner)}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold font-outfit text-xs sm:text-sm shadow-xl transition-all cursor-pointer transform hover:scale-[1.02] ${
-                  currentBanner.isLockedByPrerequisite && !isAdmin
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-950/40'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-950/40'
-                }`}
-              >
-                {currentBanner.isLockedByPrerequisite && !isAdmin ? (
-                  <>
-                    <Lock className="w-4 h-4" />
-                    <span>Bloqueado (Requer {currentBanner.prerequisiteTrainingTitle || currentBanner.prerequisiteCategoryName})</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-white" />
-                    <span>
-                      {currentBanner.isCompleted
-                        ? 'Rever Treinamento'
-                        : currentBanner.completedLessonsCount
-                        ? 'Continuar Treinamento'
-                        : 'Iniciar Treinamento'}
-                    </span>
-                  </>
-                )}
-              </button>
+                    <p
+                      className={`text-xs sm:text-sm font-sans line-clamp-2 sm:line-clamp-3 leading-relaxed ${
+                        isLight ? 'text-slate-600' : 'text-slate-300'
+                      }`}
+                    >
+                      {banner.description}
+                    </p>
 
-              {currentBanner.complementaryBookId && (
-                <button
-                  onClick={onOpenLibrary}
-                  className={`inline-flex items-center gap-1.5 px-4 py-3 rounded-2xl font-bold font-outfit text-xs transition-all cursor-pointer ${
-                    isLight
-                      ? 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 shadow-sm'
-                      : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200'
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4 text-emerald-500" />
-                  <span>Livro de Apoio</span>
-                </button>
-              )}
-            </div>
+                    <div className="pt-2 flex flex-wrap items-center gap-3 sm:gap-4">
+                      <button
+                        onClick={() => handleCardClick(banner)}
+                        className={`inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold font-outfit text-xs sm:text-sm shadow-xl transition-all cursor-pointer transform hover:scale-[1.02] ${
+                          banner.isLockedByPrerequisite && !isAdmin
+                            ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-950/40'
+                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-950/40'
+                        }`}
+                      >
+                        {banner.isLockedByPrerequisite && !isAdmin ? (
+                          <>
+                            <Lock className="w-4 h-4" />
+                            <span>Bloqueado (Requer {banner.prerequisiteTrainingTitle || banner.prerequisiteCategoryName})</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 fill-white" />
+                            <span>
+                              {banner.isCompleted
+                                ? 'Rever Treinamento'
+                                : banner.completedLessonsCount
+                                ? 'Continuar Treinamento'
+                                : 'Iniciar Treinamento'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+
+                      {banner.complementaryBookId && (
+                        <button
+                          onClick={onOpenLibrary}
+                          className={`inline-flex items-center gap-1.5 px-4 py-3 rounded-2xl font-bold font-outfit text-xs transition-all cursor-pointer ${
+                            isLight
+                              ? 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 shadow-sm'
+                              : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200'
+                          }`}
+                        >
+                          <BookOpen className="w-4 h-4 text-emerald-500" />
+                          <span>Livro de Apoio</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Banner Controls & Dots */}
           {bannerTrainings.length > 1 && (
-            <div className="relative z-10 px-6 sm:px-10 pb-6 flex items-center justify-between">
+            <div className="relative z-20 px-6 sm:px-10 pb-6 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 {bannerTrainings.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveBannerIndex(i)}
-                    className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                    className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
                       i === activeBannerIndex
-                        ? 'w-6 bg-blue-600'
+                        ? 'w-7 bg-blue-500'
                         : isLight
-                        ? 'w-2 bg-slate-300'
-                        : 'w-2 bg-white/20'
+                        ? 'w-2 bg-slate-300 hover:bg-slate-400'
+                        : 'w-2 bg-white/20 hover:bg-white/40'
                     }`}
                     aria-label={`Banner ${i + 1}`}
                   />
@@ -268,10 +339,10 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePrevBanner}
-                  className={`p-2 rounded-full border transition-colors cursor-pointer ${
+                  className={`p-2.5 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                     isLight
-                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
-                      : 'bg-slate-800/80 hover:bg-slate-700 text-white border-slate-700'
+                      ? 'bg-white/90 hover:bg-white text-slate-700 border-slate-300 shadow-sm'
+                      : 'bg-slate-800/90 hover:bg-slate-700 text-white border-slate-700 shadow-lg'
                   }`}
                   aria-label="Anterior"
                 >
@@ -279,10 +350,10 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                 </button>
                 <button
                   onClick={handleNextBanner}
-                  className={`p-2 rounded-full border transition-colors cursor-pointer ${
+                  className={`p-2.5 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                     isLight
-                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
-                      : 'bg-slate-800/80 hover:bg-slate-700 text-white border-slate-700'
+                      ? 'bg-white/90 hover:bg-white text-slate-700 border-slate-300 shadow-sm'
+                      : 'bg-slate-800/90 hover:bg-slate-700 text-white border-slate-700 shadow-lg'
                   }`}
                   aria-label="Próximo"
                 >
@@ -294,7 +365,7 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
         </section>
       )}
 
-      {/* CATEGORY SECTIONS / TRILHAS (Inspired by ZAMPlay blocks) */}
+      {/* CATEGORY SECTIONS / TRILHAS (Com botões de rolagem suave para PC) */}
       {sections.map((section) => (
         <section key={section.category} className="space-y-4">
           <div
@@ -320,17 +391,86 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
               </p>
             </div>
 
-            <span
-              className={`text-xs font-mono font-medium ${
-                isLight ? 'text-slate-500' : 'text-slate-400'
-              }`}
-            >
-              {section.trainings.length} {section.trainings.length === 1 ? 'curso' : 'cursos'}
-            </span>
+            <div className="flex items-center gap-3">
+              <span
+                className={`text-xs font-mono font-medium ${
+                  isLight ? 'text-slate-500' : 'text-slate-400'
+                }`}
+              >
+                {section.trainings.length} {section.trainings.length === 1 ? 'curso' : 'cursos'}
+              </span>
+
+              {/* Botões de rolagem horizontal no cabeçalho (visíveis no PC / Desktop) */}
+              <div className="hidden sm:flex items-center gap-1.5 pl-2 border-l border-current/10">
+                <button
+                  type="button"
+                  onClick={() => scrollCategory(section.category, 'left')}
+                  className={`p-1.5 rounded-lg border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                    isLight
+                      ? 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700 shadow-xs'
+                      : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                  title="Rolar cursos para a esquerda"
+                  aria-label="Rolar cursos para a esquerda"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollCategory(section.category, 'right')}
+                  className={`p-1.5 rounded-lg border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                    isLight
+                      ? 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700 shadow-xs'
+                      : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                  title="Rolar cursos para a direita"
+                  aria-label="Rolar cursos para a direita"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Horizontal Touch Scroll of Training Cards */}
-          <div className="flex items-stretch gap-4 sm:gap-5 overflow-x-auto pb-4 pt-1 scrollbar-none snap-x snap-mandatory">
+          {/* Carrossel de Cards com Rolagem Touch e Botões Flutuantes para PC */}
+          <div className="relative group/carousel">
+            {/* Botão Flutuante Esquerdo (Desktop / PC) */}
+            <button
+              type="button"
+              onClick={() => scrollCategory(section.category, 'left')}
+              className={`hidden md:flex absolute -left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full border shadow-xl backdrop-blur-md opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 cursor-pointer hover:scale-110 active:scale-95 ${
+                isLight
+                  ? 'bg-white/95 hover:bg-white text-slate-800 border-slate-200 shadow-slate-300/50'
+                  : 'bg-slate-900/95 hover:bg-slate-800 text-white border-slate-700 shadow-black/60'
+              }`}
+              title="Rolar para esquerda"
+              aria-label="Rolar categoria para esquerda"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+
+            {/* Botão Flutuante Direito (Desktop / PC) */}
+            <button
+              type="button"
+              onClick={() => scrollCategory(section.category, 'right')}
+              className={`hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full border shadow-xl backdrop-blur-md opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 cursor-pointer hover:scale-110 active:scale-95 ${
+                isLight
+                  ? 'bg-white/95 hover:bg-white text-slate-800 border-slate-200 shadow-slate-300/50'
+                  : 'bg-slate-900/95 hover:bg-slate-800 text-white border-slate-700 shadow-black/60'
+              }`}
+              title="Rolar para direita"
+              aria-label="Rolar categoria para direita"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+
+            {/* Trilho de Cards Rolável */}
+            <div
+              ref={(el) => {
+                categoryRowRefs.current[section.category] = el;
+              }}
+              className="flex items-stretch gap-4 sm:gap-5 overflow-x-auto pb-4 pt-1 scrollbar-none snap-x snap-mandatory scroll-smooth"
+            >
             {section.trainings.map((training) => {
               const isFav = bookmarkedIds.includes(training.id);
               const progress = training.progressPercent || 0;
@@ -494,6 +634,7 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                 </div>
               );
             })}
+            </div>
           </div>
         </section>
       ))}
