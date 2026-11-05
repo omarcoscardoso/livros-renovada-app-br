@@ -30,7 +30,8 @@ export interface IBookAssetStorage {
 
 export interface IDatabaseSnapshotStorage {
   restoreDatabaseSnapshot(targetLocalPath: string): Promise<boolean>;
-  syncDatabaseSnapshot(sourceLocalPath: string): Promise<void>;
+  syncDatabaseSnapshot(sourceLocalPath: string, immediate?: boolean): Promise<void>;
+  flushDatabaseSync?(sourceLocalPath: string): Promise<void>;
 }
 
 export interface StorageDetails {
@@ -71,6 +72,7 @@ export class GcsStorageService implements IStorageService {
   private bucket: Bucket | null = null;
   private readonly bucketName: string;
   private dbSyncTimer: NodeJS.Timeout | null = null;
+  private syncChain: Promise<void> = Promise.resolve();
 
   constructor(options?: { bucketName?: string }) {
     this.bucketName =
@@ -277,14 +279,15 @@ export class GcsStorageService implements IStorageService {
     }
   }
 
-  public async syncDatabaseSnapshot(sourceLocalPath: string): Promise<void> {
+  public async syncDatabaseSnapshot(sourceLocalPath: string, immediate = false): Promise<void> {
     if (!this.bucket) return;
 
     if (this.dbSyncTimer) {
       clearTimeout(this.dbSyncTimer);
+      this.dbSyncTimer = null;
     }
 
-    this.dbSyncTimer = setTimeout(async () => {
+    const performSync = async () => {
       const tempSnapshotPath = path.join(
         os.tmpdir(),
         `snapshot_${Date.now()}_${Math.random().toString(36).slice(2)}.sqlite`
@@ -307,6 +310,9 @@ export class GcsStorageService implements IStorageService {
           resumable: false,
           contentType: 'application/x-sqlite3',
         });
+        console.log(
+          `[Storage] Snapshot library.sqlite persistido com sucesso no GCS (${buffer.length} bytes).`
+        );
       } catch (err) {
         console.warn('Aviso ao sincronizar library.sqlite para o GCS:', err);
       } finally {
@@ -318,7 +324,21 @@ export class GcsStorageService implements IStorageService {
           }
         }
       }
+    };
+
+    if (immediate) {
+      this.syncChain = this.syncChain.then(performSync, performSync);
+      return this.syncChain;
+    }
+
+    this.dbSyncTimer = setTimeout(() => {
+      this.dbSyncTimer = null;
+      this.syncChain = this.syncChain.then(performSync, performSync);
     }, 500);
+  }
+
+  public async flushDatabaseSync(sourceLocalPath: string): Promise<void> {
+    return this.syncDatabaseSnapshot(sourceLocalPath, true);
   }
 
   public async ensureDefaultAssets(
@@ -486,10 +506,14 @@ export class InMemoryStorageService implements IStorageService {
     return false;
   }
 
-  public async syncDatabaseSnapshot(sourceLocalPath: string): Promise<void> {
+  public async syncDatabaseSnapshot(sourceLocalPath: string, _immediate = false): Promise<void> {
     if (fs.existsSync(sourceLocalPath)) {
       this.dbSnapshot = await fsPromises.readFile(sourceLocalPath);
     }
+  }
+
+  public async flushDatabaseSync(sourceLocalPath: string): Promise<void> {
+    return this.syncDatabaseSnapshot(sourceLocalPath, true);
   }
 
   public async ensureDefaultAssets(

@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
-import { getDatabase } from '../db/database';
+import { getDatabase, DEFAULT_DB_PATH } from '../db/database';
+import { IStorageService, getStorageService } from '../services/storageService';
 import {
   Training,
   TrainingLesson,
@@ -15,6 +16,7 @@ import {
 } from '../../types/training';
 
 export interface ITrainingRepository {
+  syncStorage?(immediate?: boolean): Promise<void>;
   getAllTrainings(userId?: string, category?: string, search?: string, includeDrafts?: boolean): Training[];
   getTrainingById(id: string, userId?: string, isAdmin?: boolean): Training | null;
   createTraining(data: Partial<Training>): Training;
@@ -88,16 +90,40 @@ export interface ITrainingRepository {
 
 export class SqliteTrainingRepository implements ITrainingRepository {
   private db: DatabaseSync;
+  private storage: IStorageService;
+  private isDefaultDb: boolean;
+  private dbPath: string;
+  private shouldSync: boolean;
 
-  constructor(customDbOrPath?: DatabaseSync | string) {
+  constructor(customDbOrPath?: DatabaseSync | string, storage?: IStorageService) {
     if (typeof customDbOrPath === 'string') {
       this.db = getDatabase(customDbOrPath);
+      this.dbPath = customDbOrPath;
+      this.isDefaultDb = false;
     } else if (customDbOrPath) {
       this.db = customDbOrPath;
+      this.dbPath = DEFAULT_DB_PATH;
+      this.isDefaultDb = false;
     } else {
       this.db = getDatabase();
+      this.dbPath = DEFAULT_DB_PATH;
+      this.isDefaultDb = true;
     }
+    this.storage = storage || getStorageService();
+    this.shouldSync = Boolean(storage) || this.isDefaultDb;
     this.seedDefaultCategoriesIfNeeded();
+  }
+
+  public async syncStorage(immediate = true): Promise<void> {
+    if (this.shouldSync) {
+      await this.storage.syncDatabaseSnapshot(this.dbPath, immediate);
+    }
+  }
+
+  private triggerRemoteSync(immediate = true): void {
+    if (this.shouldSync) {
+      void this.storage.syncDatabaseSnapshot(this.dbPath, immediate);
+    }
   }
 
   seedDefaultTrainingsIfNeeded(): void {
@@ -344,6 +370,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         );
       }
     }
+
+    this.triggerRemoteSync(true);
   }
 
   getAllTrainings(userId?: string, category?: string, search?: string, includeDrafts: boolean = false): Training[] {
@@ -697,6 +725,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       }
     }
 
+    this.triggerRemoteSync(true);
     return this.getTrainingById(id, undefined, true)!;
   }
 
@@ -773,6 +802,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       id
     );
 
+    this.triggerRemoteSync(true);
     return this.getTrainingById(id, undefined, true);
   }
 
@@ -790,6 +820,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       WHERE id = ?
     `).run(newStatus, now, id);
 
+    this.triggerRemoteSync(true);
     return { isPublished: Boolean(newStatus) };
   }
 
@@ -802,6 +833,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       this.db.prepare('DELETE FROM training_lessons WHERE training_id = ?').run(id);
       this.db.prepare('DELETE FROM user_training_progress WHERE training_id = ?').run(id);
       this.db.prepare('DELETE FROM training_bookmarks WHERE training_id = ?').run(id);
+      this.triggerRemoteSync(true);
       return true;
     }
     return false;
@@ -930,6 +962,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       now
     );
 
+    this.triggerRemoteSync(true);
+
     return {
       id,
       trainingId,
@@ -988,6 +1022,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       trainingId
     );
 
+    this.triggerRemoteSync(true);
+
     return {
       id: lessonId,
       trainingId,
@@ -1006,7 +1042,11 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     const res = this.db
       .prepare('DELETE FROM training_lessons WHERE id = ? AND training_id = ?')
       .run(lessonId, trainingId);
-    return res.changes > 0;
+    if (res.changes > 0) {
+      this.triggerRemoteSync(true);
+      return true;
+    }
+    return false;
   }
 
   toggleLessonProgress(
@@ -1121,6 +1161,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       allLessonIds.length > 0
         ? Math.round((currentCompleted.length / allLessonIds.length) * 100)
         : 0;
+
+    this.triggerRemoteSync(true);
 
     return {
       isCompleted: isLessonCompleted,
@@ -1282,7 +1324,11 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     }
 
     const res = this.db.prepare('DELETE FROM user_certificates WHERE id = ?').run(certificateId);
-    return { success: res.changes > 0 };
+    if (res.changes > 0) {
+      this.triggerRemoteSync(true);
+      return { success: true };
+    }
+    return { success: false };
   }
 
   issueCertificateManually(data: {
@@ -1353,6 +1399,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         updated_at = excluded.updated_at
     `).run(userId, trainingId, JSON.stringify(allLessonIds), now, now);
 
+    this.triggerRemoteSync(true);
     const cert = this.getCertificateById(certId);
     return { success: true, certificate: cert || undefined };
   }
@@ -1379,6 +1426,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
 
     if (existing) {
       this.db.prepare('DELETE FROM training_bookmarks WHERE user_id = ? AND training_id = ?').run(userId, trainingId);
+      this.triggerRemoteSync(true);
       return false; // Removed
     } else {
       const now = new Date().toISOString();
@@ -1387,6 +1435,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         trainingId,
         now
       );
+      this.triggerRemoteSync(true);
       return true; // Added
     }
   }
@@ -1500,7 +1549,11 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       .prepare('DELETE FROM user_certificates WHERE user_id = ? AND training_id = ?')
       .run(userId, trainingId);
 
-    return res.changes > 0;
+    if (res.changes > 0) {
+      this.triggerRemoteSync(true);
+      return true;
+    }
+    return false;
   }
 
   completeStudentTrainingManually(
@@ -1558,6 +1611,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       cert = this.getCertificateById(cert.id);
     }
 
+    this.triggerRemoteSync(true);
     return { success: true, certificate: cert };
   }
 
@@ -1574,6 +1628,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       VALUES (?, ?, '[]', 0, NULL, ?)
     `).run(userId, trainingId, now);
 
+    this.triggerRemoteSync(true);
     return true;
   }
 
@@ -1780,6 +1835,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       `)
       .run(id, trimmedName, data.description?.trim() || null, nextOrder, prereqId, now, now);
 
+    this.triggerRemoteSync(true);
+
     return {
       id,
       name: trimmedName,
@@ -1872,6 +1929,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       .prepare('SELECT COUNT(*) as cnt FROM trainings WHERE category = ?')
       .get(newName) as { cnt: number };
 
+    this.triggerRemoteSync(true);
+
     return {
       id,
       name: newName,
@@ -1916,6 +1975,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     }
 
     this.db.prepare('DELETE FROM training_categories WHERE id = ?').run(id);
+    this.triggerRemoteSync(true);
     return { success: true };
   }
 }

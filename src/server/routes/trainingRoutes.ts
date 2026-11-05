@@ -41,9 +41,12 @@ export function createTrainingRouter(
   });
 
   // 1c. Admin: Create Category
-  router.post('/categories', auth.requireAdmin, (req, res) => {
+  router.post('/categories', auth.requireAdmin, async (req, res) => {
     try {
       const category = repo.createCategory(req.body);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.status(201).json({ success: true, category });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao criar categoria:', err);
@@ -52,11 +55,14 @@ export function createTrainingRouter(
   });
 
   // 1d. Admin: Update Category
-  router.put('/categories/:id', auth.requireAdmin, (req, res) => {
+  router.put('/categories/:id', auth.requireAdmin, async (req, res) => {
     try {
       const updated = repo.updateCategory(req.params.id, req.body);
       if (!updated) {
         return res.status(404).json({ error: 'Categoria não encontrada.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true, category: updated });
     } catch (err: any) {
@@ -66,11 +72,14 @@ export function createTrainingRouter(
   });
 
   // 1e. Admin: Delete Category
-  router.delete('/categories/:id', auth.requireAdmin, (req, res) => {
+  router.delete('/categories/:id', auth.requireAdmin, async (req, res) => {
     try {
       const result = repo.deleteCategory(req.params.id);
       if (!result.success) {
         return res.status(400).json({ error: result.error || 'Falha ao excluir categoria.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true });
     } catch (err: any) {
@@ -163,7 +172,7 @@ export function createTrainingRouter(
   });
 
   // 3. Toggle lesson progress (Complete / Incomplete with audit)
-  router.post('/:id/lessons/:lessonId/toggle', auth.requireAuth, (req: any, res) => {
+  router.post('/:id/lessons/:lessonId/toggle', auth.requireAuth, async (req: any, res) => {
     try {
       // Previne IDOR: aluno só altera seu próprio progresso; apenas admin pode enviar userId de outro aluno
       const userId = (req.user?.role === 'admin' && req.body?.userId) ? req.body.userId : req.user?.id;
@@ -176,6 +185,9 @@ export function createTrainingRouter(
       const audit = req.body?.audit;
 
       const result = repo.toggleLessonProgress(userId, trainingId, lessonId, userName, audit);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error('[Trainings] Erro ao alternar progresso:', err);
@@ -184,10 +196,13 @@ export function createTrainingRouter(
   });
 
   // 4. Bookmark toggle
-  router.post('/:id/bookmark', auth.requireAuth, (req: any, res) => {
+  router.post('/:id/bookmark', auth.requireAuth, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const isBookmarked = repo.toggleBookmark(userId, req.params.id);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.json({ success: true, isBookmarked });
     } catch (err: any) {
       console.error('[Trainings] Erro ao favoritar:', err);
@@ -196,9 +211,12 @@ export function createTrainingRouter(
   });
 
   // 5. Admin: Create Training
-  router.post('/', auth.requireAdmin, (req, res) => {
+  router.post('/', auth.requireAdmin, async (req, res) => {
     try {
       const training = repo.createTraining(req.body);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.status(201).json({ success: true, training });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao criar:', err);
@@ -207,11 +225,14 @@ export function createTrainingRouter(
   });
 
   // 6. Admin: Update Training
-  router.put('/:id', auth.requireAdmin, (req, res) => {
+  router.put('/:id', auth.requireAdmin, async (req, res) => {
     try {
       const updated = repo.updateTraining(req.params.id, req.body);
       if (!updated) {
         return res.status(404).json({ error: 'Treinamento não encontrado.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true, training: updated });
     } catch (err: any) {
@@ -221,11 +242,14 @@ export function createTrainingRouter(
   });
 
   // 7. Admin: Delete Training
-  router.delete('/:id', auth.requireAdmin, (req, res) => {
+  router.delete('/:id', auth.requireAdmin, async (req, res) => {
     try {
       const success = repo.deleteTraining(req.params.id);
       if (!success) {
         return res.status(404).json({ error: 'Treinamento não encontrado.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true });
     } catch (err: any) {
@@ -235,12 +259,15 @@ export function createTrainingRouter(
   });
 
   // 7b. Admin: Toggle or Set Training Publication
-  router.patch('/:id/publish', auth.requireAdmin, (req: any, res) => {
+  router.patch('/:id/publish', auth.requireAdmin, async (req: any, res) => {
     try {
       const isPublished = typeof req.body?.isPublished === 'boolean' ? req.body.isPublished : undefined;
       const result = repo.setTrainingPublication(req.params.id, isPublished);
       if (!result) {
         return res.status(404).json({ error: 'Treinamento não encontrado.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true, ...result });
     } catch (err: any) {
@@ -250,9 +277,12 @@ export function createTrainingRouter(
   });
 
   // 8. Admin: Add Lesson / Video
-  router.post('/:id/lessons', auth.requireAdmin, (req, res) => {
+  router.post('/:id/lessons', auth.requireAdmin, async (req, res) => {
     try {
       const lesson = repo.addLesson(req.params.id, req.body);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.status(201).json({ success: true, lesson });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao adicionar aula:', err);
@@ -261,11 +291,14 @@ export function createTrainingRouter(
   });
 
   // 9. Admin: Update Lesson / Video
-  router.put('/:id/lessons/:lessonId', auth.requireAdmin, (req, res) => {
+  router.put('/:id/lessons/:lessonId', auth.requireAdmin, async (req, res) => {
     try {
       const updated = repo.updateLesson(req.params.id, req.params.lessonId, req.body);
       if (!updated) {
         return res.status(404).json({ error: 'Aula não encontrada.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true, lesson: updated });
     } catch (err: any) {
@@ -275,11 +308,14 @@ export function createTrainingRouter(
   });
 
   // 10. Admin: Delete Lesson / Video
-  router.delete('/:id/lessons/:lessonId', auth.requireAdmin, (req, res) => {
+  router.delete('/:id/lessons/:lessonId', auth.requireAdmin, async (req, res) => {
     try {
       const success = repo.deleteLesson(req.params.id, req.params.lessonId);
       if (!success) {
         return res.status(404).json({ error: 'Aula não encontrada.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true });
     } catch (err: any) {
@@ -302,12 +338,15 @@ export function createTrainingRouter(
   });
 
   // 12. Admin: Concluir / Aprovar Aluno Manualmente (Emite Certificado)
-  router.post('/admin/students/:userId/trainings/:trainingId/complete', auth.requireAdmin, (req: any, res) => {
+  router.post('/admin/students/:userId/trainings/:trainingId/complete', auth.requireAdmin, async (req: any, res) => {
     try {
       const { userId, trainingId } = req.params;
       const result = repo.completeStudentTrainingManually(userId, trainingId, req.user?.name);
       if (!result.success) {
         return res.status(404).json({ error: 'Treinamento não encontrado.' });
+      }
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
       }
       res.json({ success: true, ...result });
     } catch (err: any) {
@@ -317,10 +356,13 @@ export function createTrainingRouter(
   });
 
   // 13. Admin: Resetar Progresso do Aluno
-  router.delete('/admin/students/:userId/trainings/:trainingId/progress', auth.requireAdmin, (req: any, res) => {
+  router.delete('/admin/students/:userId/trainings/:trainingId/progress', auth.requireAdmin, async (req: any, res) => {
     try {
       const { userId, trainingId } = req.params;
       const success = repo.resetStudentProgress(userId, trainingId);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.json({ success });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao resetar progresso:', err);
@@ -329,13 +371,16 @@ export function createTrainingRouter(
   });
 
   // 14. Admin: Inscrever Aluno em Treinamento
-  router.post('/admin/students/enroll', auth.requireAdmin, (req: any, res) => {
+  router.post('/admin/students/enroll', auth.requireAdmin, async (req: any, res) => {
     try {
       const { userId, trainingId } = req.body;
       if (!userId || !trainingId) {
         return res.status(400).json({ error: 'Informe userId e trainingId.' });
       }
       const success = repo.enrollStudent(userId, trainingId);
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.json({ success });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao inscrever aluno:', err);
@@ -368,7 +413,7 @@ export function createTrainingRouter(
   });
 
   // 17. Admin: Emitir / Fornecer Certificado Manualmente
-  router.post('/admin/certificates', auth.requireAdmin, (req: any, res) => {
+  router.post('/admin/certificates', auth.requireAdmin, async (req: any, res) => {
     try {
       const { userId, trainingId, userName, trainingTitle, workloadHours } = req.body;
       if (!userId || !trainingId) {
@@ -386,6 +431,9 @@ export function createTrainingRouter(
         return res.status(400).json({ error: result.error || 'Falha ao emitir certificado.' });
       }
 
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.status(201).json({ success: true, certificate: result.certificate });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao emitir certificado:', err);
@@ -394,7 +442,7 @@ export function createTrainingRouter(
   });
 
   // 18. Admin: Revogar / Excluir Certificado Emitido Equivocadamente
-  router.delete('/admin/certificates/:id', auth.requireAdmin, (req: any, res) => {
+  router.delete('/admin/certificates/:id', auth.requireAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
       const resetProgress = req.query.resetProgress !== 'false';
@@ -404,6 +452,9 @@ export function createTrainingRouter(
         return res.status(404).json({ error: result.error || 'Certificado não encontrado.' });
       }
 
+      if (repo.syncStorage) {
+        await repo.syncStorage(true);
+      }
       res.json({ success: true, message: 'Certificado revogado com sucesso.' });
     } catch (err: any) {
       console.error('[Trainings Admin] Erro ao revogar certificado:', err);
