@@ -2,6 +2,7 @@ import React from 'react';
 import { Bookmark, Clock, Play, BookOpen } from 'lucide-react';
 import { Training } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
+import { formatWorkload } from '../../utils/workloadFormat';
 
 interface LmsBookmarksScreenProps {
   trainings: Training[];
@@ -162,7 +163,7 @@ export const LmsBookmarksScreen: React.FC<LmsBookmarksScreenProps> = ({
                 >
                   <span className="flex items-center gap-1">
                     <Clock className={`w-3 h-3 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
-                    {t.workloadHours}h carga
+                    {formatWorkload(t.workloadHours)}
                   </span>
                   <span>{t.lessonsCount} aulas</span>
                 </div>

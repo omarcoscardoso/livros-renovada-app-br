@@ -65,6 +65,7 @@ export interface Training {
   isFeatured: boolean;
   isCategoryFeatured?: boolean;
   workloadHours: number;
+  autoWorkload?: boolean;
   complementaryBookId?: string | null;
   orderIndex: number;
   isPublished: boolean;

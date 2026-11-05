@@ -2,6 +2,7 @@ import React from 'react';
 import { ShieldCheck, Printer, X, Award } from 'lucide-react';
 import { UserCertificate } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
+import { formatWorkload } from '../../../../utils/workloadFormat';
 
 export interface CertificatePreviewModalProps {
   certificate: UserCertificate | null;
@@ -99,7 +100,7 @@ export const CertificatePreviewModal: React.FC<CertificatePreviewModalProps> = (
               {certificate.trainingTitle}
             </h4>
             <p className={`text-xs font-mono mt-1 ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
-              Carga Horária Comprovada: <strong>{certificate.workloadHours} horas</strong>
+              Carga Horária Comprovada: <strong>{formatWorkload(certificate.workloadHours, { style: 'long' })}</strong>
             </p>
           </div>
 

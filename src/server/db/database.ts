@@ -280,6 +280,7 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       is_category_featured INTEGER DEFAULT 0,
       is_published INTEGER DEFAULT 1,
       workload_hours REAL DEFAULT 1,
+      auto_workload INTEGER DEFAULT 1,
       complementary_book_id TEXT,
       order_index INTEGER DEFAULT 0,
       prerequisite_training_id TEXT,
@@ -387,6 +388,15 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
   if (!trainingColNames.has('is_category_featured')) {
     try {
       db.exec(`ALTER TABLE trainings ADD COLUMN is_category_featured INTEGER DEFAULT 0`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure trainings table has auto_workload column for dynamic lesson-based duration calculation
+  if (!trainingColNames.has('auto_workload')) {
+    try {
+      db.exec(`ALTER TABLE trainings ADD COLUMN auto_workload INTEGER DEFAULT 1`);
     } catch {
       // ignore
     }

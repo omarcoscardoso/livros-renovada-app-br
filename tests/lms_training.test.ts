@@ -8,6 +8,7 @@ import { createTrainingRouter } from '../src/server/routes/trainingRoutes';
 import { getEmbedVideoUrl, detectVideoType } from '../src/utils/videoEmbed';
 import { Training } from '../src/types/training';
 import { IStorageService, InMemoryStorageService } from '../src/server/services/storageService';
+import { formatWorkload } from '../src/utils/workloadFormat';
 
 describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
   let testDbPath: string;
@@ -1636,6 +1637,142 @@ describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
       } finally {
         server.close();
       }
+    });
+  });
+
+  describe('Cálculo Automático de Carga Horária e Treinamentos Curtos (< 1h)', () => {
+    it('deve formatar cargas horárias corretamente com formatWorkload em formato curto e longo', () => {
+      // Menos de 1 hora
+      expect(formatWorkload(0.25)).toBe('15 min');
+      expect(formatWorkload(0.5)).toBe('30 min');
+      expect(formatWorkload(0.75)).toBe('45 min');
+      expect(formatWorkload(0.5, { style: 'long' })).toBe('30 minutos');
+      expect(formatWorkload(0.25, { style: 'long' })).toBe('15 minutos');
+
+      // Horas exatas
+      expect(formatWorkload(1)).toBe('1h');
+      expect(formatWorkload(1, { style: 'long' })).toBe('1 hora');
+      expect(formatWorkload(2)).toBe('2h');
+      expect(formatWorkload(2, { style: 'long' })).toBe('2 horas');
+
+      // Horas e minutos combinados
+      expect(formatWorkload(1.5)).toBe('1h 30m');
+      expect(formatWorkload(1.5, { style: 'long' })).toBe('1 hora e 30 minutos');
+      expect(formatWorkload(2.25)).toBe('2h 15m');
+      expect(formatWorkload(2.75, { style: 'long' })).toBe('2 horas e 45 minutos');
+
+      // Casos limites
+      expect(formatWorkload(0)).toBe('0 min');
+      expect(formatWorkload(0, { style: 'long' })).toBe('0 minutos');
+    });
+
+    it('deve calcular a carga horária automaticamente ao adicionar, editar e excluir aulas', () => {
+      // 1. Criar treinamento com autoWorkload: true
+      const training = repo.createTraining({
+        title: 'Workshop de Boas-Vindas aos Novos Membros',
+        category: 'Integração',
+        autoWorkload: true,
+      });
+
+      expect(training.autoWorkload).toBe(true);
+      expect(training.workloadHours).toBe(0);
+
+      // 2. Adicionar 1ª aula de 15 minutos -> 0.25h
+      const l1 = repo.addLesson(training.id, {
+        title: 'Aula 1: Apresentação da Visão',
+        durationMinutes: 15,
+      });
+
+      let updated = repo.getTrainingById(training.id);
+      expect(updated?.workloadHours).toBe(0.25);
+
+      // 3. Adicionar 2ª aula de 20 minutos -> 15 + 20 = 35 min -> 0.58h
+      const l2 = repo.addLesson(training.id, {
+        title: 'Aula 2: Nossos Valores Centrais',
+        durationMinutes: 20,
+      });
+
+      updated = repo.getTrainingById(training.id);
+      expect(updated?.workloadHours).toBe(0.58);
+
+      // 4. Editar a 2ª aula de 20 min para 45 min -> 15 + 45 = 60 min -> 1.0h
+      repo.updateLesson(training.id, l2.id, {
+        durationMinutes: 45,
+      });
+
+      updated = repo.getTrainingById(training.id);
+      expect(updated?.workloadHours).toBe(1);
+
+      // 5. Excluir a 2ª aula de 45 min -> resta 1ª aula de 15 min -> 0.25h
+      repo.deleteLesson(training.id, l2.id);
+
+      updated = repo.getTrainingById(training.id);
+      expect(updated?.workloadHours).toBe(0.25);
+    });
+
+    it('deve emitir certificado com carga horária menor do que 1h ao concluir treinamento curto', () => {
+      const studentId = 'usr_short_course_student';
+
+      // Criar treinamento curto de 30 min (0.5h) com autoWorkload
+      const shortTraining = repo.createTraining({
+        title: 'Mini-Treinamento de Primeiros Socorros no Templo',
+        category: 'Diaconia',
+        autoWorkload: true,
+      });
+
+      const l1 = repo.addLesson(shortTraining.id, {
+        title: 'Procedimentos de Emergência',
+        durationMinutes: 30,
+      });
+
+      expect(repo.getTrainingById(shortTraining.id)?.workloadHours).toBe(0.5);
+
+      // Concluir a aula (100% do curso)
+      const res = repo.toggleLessonProgress(studentId, shortTraining.id, l1.id, 'Irmão Diácono');
+
+      expect(res.isCompletedAll).toBe(true);
+      expect(res.progressPercent).toBe(100);
+      expect(res.certificate).toBeDefined();
+      expect(res.certificate?.workloadHours).toBe(0.5);
+
+      // Buscar o certificado emitido
+      const cert = repo.getCertificateById(res.certificate!.id);
+      expect(cert).toBeDefined();
+      expect(cert?.workloadHours).toBe(0.5);
+      expect(formatWorkload(cert!.workloadHours)).toBe('30 min');
+      expect(formatWorkload(cert!.workloadHours, { style: 'long' })).toBe('30 minutos');
+    });
+
+    it('deve respeitar modo manual (autoWorkload: false) e não sobrescrever carga horária manual', () => {
+      // Criar curso com carga manual de 45 min (0.75h)
+      const manualTraining = repo.createTraining({
+        title: 'Capacitação com Carga Fixa Estipulada',
+        category: 'Liderança',
+        autoWorkload: false,
+        workloadHours: 0.75,
+      });
+
+      expect(manualTraining.autoWorkload).toBe(false);
+      expect(manualTraining.workloadHours).toBe(0.75);
+
+      // Adicionar aula de 10 minutos
+      repo.addLesson(manualTraining.id, {
+        title: 'Aula Única Rápida',
+        durationMinutes: 10,
+      });
+
+      // Carga horária deve permanecer 0.75h fixa
+      let current = repo.getTrainingById(manualTraining.id);
+      expect(current?.workloadHours).toBe(0.75);
+
+      // Alternar para autoWorkload: true deve recalcular para 10 min (0.17h)
+      repo.updateTraining(manualTraining.id, {
+        autoWorkload: true,
+      });
+
+      current = repo.getTrainingById(manualTraining.id);
+      expect(current?.autoWorkload).toBe(true);
+      expect(current?.workloadHours).toBe(0.17); // 10/60 = 0.1666... -> 0.17h
     });
   });
 });
