@@ -33,6 +33,7 @@ import {
   isDirectVideoUrl,
 } from '../../utils/videoEmbed';
 import { useAuth } from '../../context/AuthContext';
+import { formatWorkload } from '../../utils/workloadFormat';
 
 function loadYouTubeApi(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
@@ -1096,7 +1097,7 @@ export const LmsTrainingPlayer: React.FC<LmsTrainingPlayerProps> = ({
                       isLight ? 'text-slate-900' : 'text-white'
                     }`}
                   >
-                    {currentTraining.workloadHours} horas
+                    {formatWorkload(currentTraining.workloadHours, { style: 'long' })}
                   </p>
                 </div>
 

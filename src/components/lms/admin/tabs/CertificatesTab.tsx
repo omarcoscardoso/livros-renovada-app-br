@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Training, UserCertificate } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
+import { formatWorkload } from '../../../../utils/workloadFormat';
 
 export interface CertificatesTabProps {
   certificates: UserCertificate[];
@@ -109,7 +110,7 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
             </div>
           </div>
           <p className="text-2xl sm:text-3xl font-black font-outfit mt-2">
-            {certificates.reduce((acc, c) => acc + (c.workloadHours || 0), 0)}h
+            {formatWorkload(certificates.reduce((acc, c) => acc + (c.workloadHours || 0), 0))}
           </p>
           <p className={`text-xs mt-1 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
             Horas totais de capacitação ministerial
@@ -272,7 +273,7 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
                             isLight ? 'text-slate-500' : 'text-slate-400'
                           }`}>
                             <Clock className="w-3 h-3 text-blue-500" />
-                            {cert.workloadHours} horas
+                            {formatWorkload(cert.workloadHours, { style: 'long' })}
                           </span>
                         </div>
                       </td>

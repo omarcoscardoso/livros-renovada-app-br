@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Training } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
+import { formatWorkload } from '../../../../utils/workloadFormat';
 
 export interface CoursesTabProps {
   trainings: Training[];
@@ -195,7 +196,7 @@ export const CoursesTab: React.FC<CoursesTabProps> = ({
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-xs text-slate-200">
                 <span className="flex items-center space-x-1">
                   <Clock className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{training.workloadHours}h de carga horária</span>
+                  <span>{formatWorkload(training.workloadHours)} de carga horária</span>
                 </span>
                 <span className="flex items-center space-x-1">
                   <Video className="w-3.5 h-3.5 text-indigo-400" />

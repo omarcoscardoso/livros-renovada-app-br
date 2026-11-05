@@ -35,6 +35,7 @@ import { usePwa } from '../../context/PwaContext';
 import { Training, UserCertificate } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
 import { CertificatePreviewModal } from './admin/modals/CertificatePreviewModal';
+import { formatWorkload } from '../../utils/workloadFormat';
 
 export interface LmsUserProfileScreenProps {
   initialTab?: 'learning' | 'courses' | 'certificates' | 'profile';
@@ -587,7 +588,7 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
                             <span>
                               {training.completedLessonsCount || 0} de {training.lessonsCount || 0} aulas
                             </span>
-                            <span className="text-blue-500 font-bold">{training.workloadHours}h carga</span>
+                            <span className="text-blue-500 font-bold">{formatWorkload(training.workloadHours)}</span>
                           </div>
                           <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                             <div
@@ -656,7 +657,7 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
 
                       <div>
                         <h4 className="font-outfit font-bold text-sm line-clamp-2">{cert.trainingTitle}</h4>
-                        <p className="text-xs text-slate-400 mt-1">Carga Horária: {cert.workloadHours} horas</p>
+                        <p className="text-xs text-slate-400 mt-1">Carga Horária: {formatWorkload(cert.workloadHours, { style: 'long' })}</p>
                       </div>
                     </div>
 
@@ -813,7 +814,7 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
                       <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-1">
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-blue-400" />
-                          <span>{training.workloadHours} horas</span>
+                          <span>{formatWorkload(training.workloadHours, { style: 'long' })}</span>
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1">
@@ -938,7 +939,7 @@ export const LmsUserProfileScreen: React.FC<LmsUserProfileScreenProps> = ({
                       </div>
 
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                        {cert.workloadHours}h
+                        {formatWorkload(cert.workloadHours)}
                       </span>
                     </div>
 

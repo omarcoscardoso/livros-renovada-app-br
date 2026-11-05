@@ -19,6 +19,7 @@ import {
 import { Training } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
 import { useAuth } from '../../context/AuthContext';
+import { formatWorkload } from '../../utils/workloadFormat';
 
 interface LmsHomeScreenProps {
   trainings: Training[];
@@ -468,7 +469,7 @@ export const LmsHomeScreen: React.FC<LmsHomeScreenProps> = ({
                       >
                         <span className="flex items-center gap-1">
                           <Clock className={`w-3 h-3 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
-                          <span>{training.workloadHours}h carga</span>
+                          <span>{formatWorkload(training.workloadHours)}</span>
                         </span>
                         <span>{training.lessonsCount} aulas</span>
                       </div>

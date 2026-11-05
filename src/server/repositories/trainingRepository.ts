@@ -126,6 +126,32 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     }
   }
 
+  private recalculateAutoWorkload(trainingId: string): void {
+    try {
+      const training = this.db
+        .prepare('SELECT auto_workload FROM trainings WHERE id = ?')
+        .get(trainingId) as { auto_workload?: number } | undefined;
+
+      // Only recalculate if auto_workload is enabled (1)
+      if (!training || training.auto_workload !== 1) {
+        return;
+      }
+
+      const sumRes = this.db
+        .prepare('SELECT SUM(duration_minutes) as total_minutes FROM training_lessons WHERE training_id = ?')
+        .get(trainingId) as { total_minutes: number | null };
+
+      const totalMinutes = sumRes?.total_minutes || 0;
+      const workloadHours = totalMinutes > 0 ? Math.round((totalMinutes / 60) * 100) / 100 : 0;
+
+      this.db
+        .prepare('UPDATE trainings SET workload_hours = ? WHERE id = ?')
+        .run(workloadHours, trainingId);
+    } catch (err) {
+      console.error(`[TrainingRepository] Error recalculating auto workload for training ${trainingId}:`, err);
+    }
+  }
+
   seedDefaultTrainingsIfNeeded(): void {
     const countRow = this.db.prepare('SELECT COUNT(*) as cnt FROM trainings').get() as {
       cnt: number;
@@ -325,8 +351,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       INSERT INTO trainings (
         id, title, description, category, target_audience, cover_image_url,
         banner_image_url, is_required, is_featured, is_category_featured, is_published, workload_hours,
-        complementary_book_id, order_index, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        complementary_book_id, auto_workload, order_index, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertLessonStmt = this.db.prepare(`
@@ -351,6 +377,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         1,
         t.workloadHours,
         t.complementaryBookId,
+        1,
         t.orderIndex,
         now,
         now
@@ -533,7 +560,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         isFeatured: Boolean(r.is_featured),
         isCategoryFeatured: Boolean(r.is_category_featured),
         isPublished: Boolean(r.is_published ?? 1),
-        workloadHours: Number(r.workload_hours || 1),
+        workloadHours: Number(r.workload_hours || 0),
+        autoWorkload: r.auto_workload === undefined || r.auto_workload === null ? true : Boolean(r.auto_workload),
         complementaryBookId: r.complementary_book_id,
         orderIndex: Number(r.order_index || 0),
         lessonsCount: totalLessons,
@@ -659,7 +687,8 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       isFeatured: Boolean(r.is_featured),
       isCategoryFeatured: Boolean(r.is_category_featured),
       isPublished,
-      workloadHours: Number(r.workload_hours || 1),
+      workloadHours: Number(r.workload_hours || 0),
+      autoWorkload: r.auto_workload === undefined || r.auto_workload === null ? true : Boolean(r.auto_workload),
       complementaryBookId: r.complementary_book_id,
       orderIndex: Number(r.order_index || 0),
       lessonsCount: totalLessons,
@@ -697,12 +726,24 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       }
     }
 
+    const autoWorkload = data.autoWorkload !== undefined
+      ? Boolean(data.autoWorkload)
+      : (data.workloadHours === undefined);
+    let workloadHours = Number(data.workloadHours || 0);
+
+    if (autoWorkload && Array.isArray(data.lessons) && data.lessons.length > 0) {
+      const totalMinutes = data.lessons.reduce((acc, l) => acc + Number(l.durationMinutes || 0), 0);
+      if (totalMinutes > 0) {
+        workloadHours = Math.round((totalMinutes / 60) * 100) / 100;
+      }
+    }
+
     this.db.prepare(`
       INSERT INTO trainings (
         id, title, description, category, target_audience, cover_image_url,
         banner_image_url, is_required, is_featured, is_category_featured, is_published, workload_hours,
-        complementary_book_id, order_index, prerequisite_training_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        complementary_book_id, auto_workload, order_index, prerequisite_training_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.title || 'Novo Treinamento',
@@ -715,8 +756,9 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.isFeatured ? 1 : 0,
       data.isCategoryFeatured ? 1 : 0,
       isPublished,
-      Number(data.workloadHours || 1),
+      workloadHours,
       data.complementaryBookId || null,
+      autoWorkload ? 1 : 0,
       Number(data.orderIndex || 0),
       prereqTrainingId,
       now,
@@ -770,6 +812,19 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       }
     }
 
+    const autoWorkload = data.autoWorkload !== undefined
+      ? (data.autoWorkload ? 1 : 0)
+      : (data.workloadHours !== undefined ? 0 : ((existing as any).autoWorkload !== false ? 1 : 0));
+
+    let workloadHours = data.workloadHours !== undefined ? Number(data.workloadHours) : existing.workloadHours;
+    if (autoWorkload === 1) {
+      const sumRes = this.db
+        .prepare('SELECT SUM(duration_minutes) as total_minutes FROM training_lessons WHERE training_id = ?')
+        .get(id) as { total_minutes: number | null };
+      const totalMinutes = sumRes?.total_minutes || 0;
+      workloadHours = totalMinutes > 0 ? Math.round((totalMinutes / 60) * 100) / 100 : 0;
+    }
+
     const now = new Date().toISOString();
     this.db.prepare(`
       UPDATE trainings SET
@@ -785,6 +840,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
         is_published = ?,
         workload_hours = ?,
         complementary_book_id = ?,
+        auto_workload = ?,
         order_index = ?,
         prerequisite_training_id = ?,
         updated_at = ?
@@ -800,8 +856,9 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       data.isFeatured !== undefined ? (data.isFeatured ? 1 : 0) : (existing.isFeatured ? 1 : 0),
       data.isCategoryFeatured !== undefined ? (data.isCategoryFeatured ? 1 : 0) : (existing.isCategoryFeatured ? 1 : 0),
       data.isPublished !== undefined ? (data.isPublished ? 1 : 0) : (existing.isPublished ? 1 : 0),
-      data.workloadHours !== undefined ? Number(data.workloadHours) : existing.workloadHours,
+      workloadHours,
       data.complementaryBookId !== undefined ? data.complementaryBookId : existing.complementaryBookId,
+      autoWorkload,
       data.orderIndex !== undefined ? Number(data.orderIndex) : existing.orderIndex,
       prereqTrainingId,
       now,
@@ -968,6 +1025,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       now
     );
 
+    this.recalculateAutoWorkload(trainingId);
     this.triggerRemoteSync(true);
 
     return {
@@ -1028,6 +1086,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       trainingId
     );
 
+    this.recalculateAutoWorkload(trainingId);
     this.triggerRemoteSync(true);
 
     return {
@@ -1049,6 +1108,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
       .prepare('DELETE FROM training_lessons WHERE id = ? AND training_id = ?')
       .run(lessonId, trainingId);
     if (res.changes > 0) {
+      this.recalculateAutoWorkload(trainingId);
       this.triggerRemoteSync(true);
       return true;
     }
@@ -1200,7 +1260,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
 
     const training = this.getTrainingById(trainingId);
     const trainingTitle = training?.title || 'Treinamento Renovada';
-    const workloadHours = training?.workloadHours || 1;
+    const workloadHours = training && training.workloadHours !== undefined && training.workloadHours > 0 ? training.workloadHours : 1;
     const certId = `cert_${crypto.randomBytes(8).toString('hex')}`;
     const code = `LUMI-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const now = new Date().toISOString();
@@ -1373,7 +1433,7 @@ export class SqliteTrainingRepository implements ITrainingRepository {
     }
 
     const trainingTitle = data.trainingTitle?.trim() || training.title;
-    const workloadHours = data.workloadHours || training.workloadHours || 1;
+    const workloadHours = data.workloadHours !== undefined && data.workloadHours > 0 ? data.workloadHours : (training.workloadHours || 1);
     const certId = `cert_${crypto.randomBytes(6).toString('hex')}`;
     const validationCode = `LUMI-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const now = new Date().toISOString();

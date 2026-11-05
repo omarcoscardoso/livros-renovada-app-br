@@ -178,7 +178,22 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
   // Training Modal Form State
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [editingTraining, setEditingTraining] = useState<Training | null>(null);
-  const [trainingForm, setTrainingForm] = useState({
+  const [trainingForm, setTrainingForm] = useState<{
+    title: string;
+    description: string;
+    category: string;
+    targetAudience: string;
+    coverImageUrl: string;
+    bannerImageUrl: string;
+    isRequired: boolean;
+    isFeatured: boolean;
+    isCategoryFeatured: boolean;
+    isPublished: boolean;
+    workloadHours: number;
+    autoWorkload?: boolean;
+    complementaryBookId: string;
+    prerequisiteTrainingId: string;
+  }>({
     title: '',
     description: '',
     category: 'Liderança',
@@ -190,6 +205,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
     isCategoryFeatured: false,
     isPublished: false,
     workloadHours: 3,
+    autoWorkload: true,
     complementaryBookId: '',
     prerequisiteTrainingId: '',
   });
@@ -501,6 +517,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       isCategoryFeatured: false,
       isPublished: false,
       workloadHours: 3,
+      autoWorkload: true,
       complementaryBookId: '',
       prerequisiteTrainingId: '',
     });
@@ -521,6 +538,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       isCategoryFeatured: Boolean(training.isCategoryFeatured),
       isPublished: training.isPublished,
       workloadHours: training.workloadHours,
+      autoWorkload: training.autoWorkload !== undefined ? training.autoWorkload : true,
       complementaryBookId: training.complementaryBookId || '',
       prerequisiteTrainingId: training.prerequisiteTrainingId || '',
     });

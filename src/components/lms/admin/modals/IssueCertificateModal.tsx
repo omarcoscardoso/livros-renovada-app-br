@@ -2,6 +2,7 @@ import React from 'react';
 import { Award, X, Sparkles, RefreshCw } from 'lucide-react';
 import { Training } from '../../../../types/training';
 import { ReaderTheme } from '../../../Navbar';
+import { formatWorkload } from '../../../../utils/workloadFormat';
 
 export interface IssueCertificateModalProps {
   isOpen: boolean;
@@ -158,7 +159,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
               <option value="">Selecione um curso...</option>
               {trainings.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.title} ({t.workloadHours}h)
+                  {t.title} ({formatWorkload(t.workloadHours)})
                 </option>
               ))}
             </select>
@@ -166,17 +167,23 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
 
           {/* Workload Hours */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold font-outfit uppercase tracking-wider text-slate-400">
-              Carga Horária (Horas) *
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold font-outfit uppercase tracking-wider text-slate-400">
+                Carga Horária (Horas) *
+              </label>
+              <span className="text-xs font-bold text-amber-500">
+                {formatWorkload(issueCertForm.workloadHours, { style: 'long' })}
+              </span>
+            </div>
             <input
               type="number"
-              min="1"
+              min="0.1"
+              step="any"
               max="500"
               required
               value={issueCertForm.workloadHours}
               onChange={(e) =>
-                setIssueCertForm((prev) => ({ ...prev, workloadHours: Number(e.target.value) || 1 }))
+                setIssueCertForm((prev) => ({ ...prev, workloadHours: Number(e.target.value) || 0.25 }))
               }
               className={`w-full px-3.5 py-2.5 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                 isLight

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { UserCertificate } from '../../types/training';
 import { ReaderTheme } from '../Navbar';
+import { formatWorkload } from '../../utils/workloadFormat';
 
 interface LmsCertificatesScreenProps {
   certificates: UserCertificate[];
@@ -185,7 +186,7 @@ export const LmsCertificatesScreen: React.FC<LmsCertificatesScreenProps> = ({
               >
                 <span className={`flex items-center gap-1 font-mono text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                   <Clock className="w-3 h-3" />
-                  {cert.workloadHours} horas
+                  {formatWorkload(cert.workloadHours, { style: 'long' })}
                 </span>
 
                 <button
@@ -303,7 +304,7 @@ export const LmsCertificatesScreen: React.FC<LmsCertificatesScreenProps> = ({
                   concluiu com êxito todas as etapas e requisitos teóricos do treinamento{' '}
                   <strong className="text-slate-950 font-outfit">{selectedCert.trainingTitle}</strong>,
                   cumprindo carga horária estimada de{' '}
-                  <strong className="text-amber-800 font-bold">{selectedCert.workloadHours} horas</strong>{' '}
+                  <strong className="text-amber-800 font-bold">{formatWorkload(selectedCert.workloadHours, { style: 'long' })}</strong>{' '}
                   de dedicação e estudos práticos para a edificação do corpo de Cristo.
                 </p>
               </div>
