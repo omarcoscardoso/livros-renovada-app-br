@@ -277,6 +277,7 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
       banner_image_url TEXT,
       is_required INTEGER DEFAULT 0,
       is_featured INTEGER DEFAULT 0,
+      is_category_featured INTEGER DEFAULT 0,
       is_published INTEGER DEFAULT 1,
       workload_hours REAL DEFAULT 1,
       complementary_book_id TEXT,
@@ -377,6 +378,15 @@ export function getDatabase(customDbPath?: string): DatabaseSync {
   if (!trainingColNames.has('is_published')) {
     try {
       db.exec(`ALTER TABLE trainings ADD COLUMN is_published INTEGER DEFAULT 1`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure trainings table has is_category_featured column for category highlight
+  if (!trainingColNames.has('is_category_featured')) {
+    try {
+      db.exec(`ALTER TABLE trainings ADD COLUMN is_category_featured INTEGER DEFAULT 0`);
     } catch {
       // ignore
     }

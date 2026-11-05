@@ -187,6 +187,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
     bannerImageUrl: '',
     isRequired: true,
     isFeatured: true,
+    isCategoryFeatured: false,
     isPublished: false,
     workloadHours: 3,
     complementaryBookId: '',
@@ -359,6 +360,40 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
     }
   };
 
+  const handleToggleCategoryFeatured = async (training: Training) => {
+    const nextVal = !training.isCategoryFeatured;
+    try {
+      const res = await fetch(`/api/trainings/${training.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isCategoryFeatured: nextVal }),
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar destaque na categoria');
+      showToast(nextVal ? 'Curso destacado na categoria!' : 'Destaque de categoria removido.');
+      fetchTrainings();
+      onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao alterar destaque na categoria', 'error');
+    }
+  };
+
+  const handleToggleHomeFeatured = async (training: Training) => {
+    const nextVal = !training.isFeatured;
+    try {
+      const res = await fetch(`/api/trainings/${training.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFeatured: nextVal }),
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar destaque na página inicial');
+      showToast(nextVal ? 'Curso destacado na página inicial!' : 'Destaque na página inicial removido.');
+      fetchTrainings();
+      onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao alterar destaque na página inicial', 'error');
+    }
+  };
+
   // Actions: Categories
   const handleOpenCategoryModal = () => {
     setEditingCategory(null);
@@ -463,6 +498,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       bannerImageUrl: '',
       isRequired: true,
       isFeatured: true,
+      isCategoryFeatured: false,
       isPublished: false,
       workloadHours: 3,
       complementaryBookId: '',
@@ -482,6 +518,7 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
       bannerImageUrl: training.bannerImageUrl || '',
       isRequired: training.isRequired,
       isFeatured: training.isFeatured,
+      isCategoryFeatured: Boolean(training.isCategoryFeatured),
       isPublished: training.isPublished,
       workloadHours: training.workloadHours,
       complementaryBookId: training.complementaryBookId || '',
@@ -1139,6 +1176,8 @@ export const LmsAdminDashboard: React.FC<LmsAdminDashboardProps> = ({
           publicationFilter={publicationFilter}
           setPublicationFilter={setPublicationFilter}
           onTogglePublish={handleTogglePublish}
+          onToggleCategoryFeatured={handleToggleCategoryFeatured}
+          onToggleHomeFeatured={handleToggleHomeFeatured}
           onOpenEditTraining={handleOpenEditTraining}
           onDeleteTraining={handleDeleteTraining}
           onManageLessons={(trainingId, lessons) => {

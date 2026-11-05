@@ -58,7 +58,7 @@ export function createApiApp(
   const userRepo = customUserRepo || new SqliteUserRepository(undefined, storageService);
   const authMiddleware = createAuthMiddleware(userRepo, repo);
 
-  const trainingRepo = customTrainingRepo || new SqliteTrainingRepository();
+  const trainingRepo = customTrainingRepo || new SqliteTrainingRepository(undefined, storageService);
   trainingRepo.seedDefaultTrainingsIfNeeded();
 
   const extractor = new PdfExtractorService(storageService);
@@ -212,8 +212,9 @@ async function startServer() {
   const repo = new SqliteBookRepository(undefined, storageService);
   const extractor = new PdfExtractorService(storageService);
   const conversionService = new GeminiConversionService(repo, extractor);
+  const trainingRepo = new SqliteTrainingRepository(undefined, storageService);
 
-  const app = createApiApp(repo, storageService, undefined, conversionService);
+  const app = createApiApp(repo, storageService, undefined, conversionService, trainingRepo);
 
   // Retoma automaticamente quaisquer livros que tenham sido interrompidos por reinício/deploy do servidor
   void conversionService.resumePendingConversions(storageService);
@@ -232,9 +233,28 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
   });
+
+  const handleGracefulShutdown = async (signal: string) => {
+    console.log(`[Server] Recebido sinal ${signal}. Executando sincronização defensiva do banco de dados no GCS...`);
+    server.close();
+    try {
+      if (storageService.flushDatabaseSync) {
+        await storageService.flushDatabaseSync(DEFAULT_DB_PATH);
+      } else {
+        await storageService.syncDatabaseSnapshot(DEFAULT_DB_PATH, true);
+      }
+      console.log('[Server] Banco de dados sincronizado com sucesso no GCS.');
+    } catch (err) {
+      console.error('[Server] Erro ao sincronizar banco durante desligamento:', err);
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => void handleGracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => void handleGracefulShutdown('SIGINT'));
 }
 
 if (process.env.NODE_ENV !== 'test') {

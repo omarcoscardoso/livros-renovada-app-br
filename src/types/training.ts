@@ -63,6 +63,7 @@ export interface Training {
   bannerImageUrl?: string;
   isRequired: boolean;
   isFeatured: boolean;
+  isCategoryFeatured?: boolean;
   workloadHours: number;
   complementaryBookId?: string | null;
   orderIndex: number;

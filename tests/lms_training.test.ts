@@ -7,6 +7,7 @@ import { SqliteTrainingRepository } from '../src/server/repositories/trainingRep
 import { createTrainingRouter } from '../src/server/routes/trainingRoutes';
 import { getEmbedVideoUrl, detectVideoType } from '../src/utils/videoEmbed';
 import { Training } from '../src/types/training';
+import { IStorageService, InMemoryStorageService } from '../src/server/services/storageService';
 
 describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
   let testDbPath: string;
@@ -1299,6 +1300,342 @@ describe('Plataforma de Treinamento Cristão (LMS - Lumi Play)', () => {
       const fetchedAfterUpdate = repo.getLessons(course.id);
       expect(fetchedAfterUpdate[0].referenceLinks?.length).toBe(1);
       expect(fetchedAfterUpdate[0].referenceLinks?.[0].url).toBe('https://outraigreja.org.br/estudo');
+    });
+  });
+
+  describe('Persistência e Sincronização com Cloud Storage (GCS) em Cursos e Aulas', () => {
+    it('deve disparar sincronização imediata com storage ao criar cursos, adicionar 4 aulas e alterar dados', async () => {
+      const syncCalls: Array<{ path: string; immediate?: boolean }> = [];
+      const storage: IStorageService = {
+        ...new InMemoryStorageService(),
+        syncDatabaseSnapshot: async (sourceLocalPath: string, immediate?: boolean) => {
+          syncCalls.push({ path: sourceLocalPath, immediate });
+        },
+        flushDatabaseSync: async (sourceLocalPath: string) => {
+          syncCalls.push({ path: sourceLocalPath, immediate: true });
+        },
+      };
+
+      const customDbPath = path.join(
+        process.cwd(),
+        `test-lms-gcs-${Date.now()}-${Math.random().toString(36).substring(7)}.db`
+      );
+      const repoWithGcs = new SqliteTrainingRepository(customDbPath, storage);
+
+      try {
+        // 1. Criar novo curso
+        const course = repoWithGcs.createTraining({
+          title: 'Escola Ministerial de Líderes',
+          category: 'Liderança',
+          description: 'Curso avançado',
+          status: 'published',
+        });
+
+        expect(course.id).toBeDefined();
+        expect(syncCalls.length).toBeGreaterThanOrEqual(1);
+        expect(syncCalls[syncCalls.length - 1].immediate).toBe(true);
+        expect(syncCalls[syncCalls.length - 1].path).toBe(customDbPath);
+
+        const countAfterCourse = syncCalls.length;
+
+        // 2. Adicionar 4 aulas sucessivas (reproduzindo exatamente o cenário do usuário)
+        const lesson1 = repoWithGcs.addLesson(course.id, {
+          title: 'Aula 1: O Caráter do Líder',
+          description: 'Introdução ao módulo',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          durationMinutes: 25,
+        });
+
+        const lesson2 = repoWithGcs.addLesson(course.id, {
+          title: 'Aula 2: A Visão Celular',
+          description: 'Princípios da multiplicação',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          durationMinutes: 30,
+        });
+
+        const lesson3 = repoWithGcs.addLesson(course.id, {
+          title: 'Aula 3: Pastoreio e Consolidação',
+          description: 'Cuidado pastoral',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          durationMinutes: 35,
+        });
+
+        const lesson4 = repoWithGcs.addLesson(course.id, {
+          title: 'Aula 4: Envio e Multiplicação',
+          description: 'Conclusão do treinamento',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          durationMinutes: 40,
+        });
+
+        // Cada aula deve ter gerado uma sincronização imediata
+        expect(syncCalls.length).toBe(countAfterCourse + 4);
+        expect(syncCalls[syncCalls.length - 1].immediate).toBe(true);
+
+        const allLessons = repoWithGcs.getLessons(course.id);
+        expect(allLessons.length).toBe(4);
+
+        // 3. Atualizar aula
+        repoWithGcs.updateLesson(course.id, lesson1.id, {
+          title: 'Aula 1: O Caráter do Líder (Edição Revisada)',
+        });
+        expect(syncCalls.length).toBe(countAfterCourse + 5);
+        expect(syncCalls[syncCalls.length - 1].immediate).toBe(true);
+
+        // 4. Excluir aula
+        repoWithGcs.deleteLesson(course.id, lesson4.id);
+        expect(syncCalls.length).toBe(countAfterCourse + 6);
+        expect(syncCalls[syncCalls.length - 1].immediate).toBe(true);
+
+        // 5. Excluir curso
+        repoWithGcs.deleteTraining(course.id);
+        expect(syncCalls.length).toBe(countAfterCourse + 7);
+        expect(syncCalls[syncCalls.length - 1].immediate).toBe(true);
+      } finally {
+        for (const ext of ['', '-wal', '-shm', '-journal']) {
+          const f = `${customDbPath}${ext}`;
+          if (fs.existsSync(f)) {
+            try {
+              fs.unlinkSync(f);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    });
+
+    it('deve sincronizar com Cloud Storage através das rotas da API Express', async () => {
+      let syncCount = 0;
+      const storage: IStorageService = {
+        ...new InMemoryStorageService(),
+        syncDatabaseSnapshot: async (_sourceLocalPath: string, _immediate?: boolean) => {
+          syncCount++;
+        },
+      };
+
+      const customDbPath = path.join(
+        process.cwd(),
+        `test-lms-api-gcs-${Date.now()}-${Math.random().toString(36).substring(7)}.db`
+      );
+      const repoWithGcs = new SqliteTrainingRepository(customDbPath, storage);
+
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/api/trainings',
+        createTrainingRouter(repoWithGcs, {
+          requireAuth: (req: any, _res, next) => {
+            req.user = { id: 'admin-user-1', name: 'Administrador', role: 'admin' };
+            next();
+          },
+          requireAdmin: (req: any, _res, next) => {
+            req.user = { id: 'admin-user-1', name: 'Administrador', role: 'admin' };
+            next();
+          },
+        })
+      );
+
+      const server = app.listen(0);
+      const address = server.address() as any;
+      const port = address.port;
+
+      try {
+        // Criar curso via POST /api/trainings
+        const resCourse = await fetch(`http://127.0.0.1:${port}/api/trainings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Treinamento de Diaconato',
+            category: 'Geral',
+            status: 'published',
+          }),
+        });
+
+        expect(resCourse.status).toBe(201);
+        const dataCourse = await resCourse.json();
+        expect(dataCourse.success).toBe(true);
+        const trainingId = dataCourse.training.id;
+        expect(syncCount).toBeGreaterThanOrEqual(1);
+
+        const currentSyncs = syncCount;
+
+        // Adicionar aula via POST /api/trainings/:id/lessons
+        const resLesson = await fetch(`http://127.0.0.1:${port}/api/trainings/${trainingId}/lessons`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Aula de Serviço Prático',
+            videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          }),
+        });
+
+        expect(resLesson.status).toBe(201);
+        const dataLesson = await resLesson.json();
+        expect(dataLesson.success).toBe(true);
+        expect(syncCount).toBeGreaterThan(currentSyncs);
+      } finally {
+        server.close();
+        for (const ext of ['', '-wal', '-shm', '-journal']) {
+          const f = `${customDbPath}${ext}`;
+          if (fs.existsSync(f)) {
+            try {
+              fs.unlinkSync(f);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    });
+  });
+
+  describe('Ordenação de Cursos e Destaque na Categoria (isCategoryFeatured)', () => {
+    it('deve ordenar cursos dentro de uma categoria do mais antigo para o mais recente por padrão', () => {
+      // Cria 3 cursos na mesma categoria em momentos distintos
+      const c1 = repo.createTraining({
+        title: 'Curso Antigo (Janeiro)',
+        category: 'Teologia',
+        description: 'Primeiro curso criado',
+      });
+
+      const c2 = repo.createTraining({
+        title: 'Curso Intermediário (Fevereiro)',
+        category: 'Teologia',
+        description: 'Segundo curso criado',
+      });
+
+      const c3 = repo.createTraining({
+        title: 'Curso Recente (Março)',
+        category: 'Teologia',
+        description: 'Terceiro curso criado',
+      });
+
+      // Simula datas criadas explicitamente para garantir ordem temporal estrita
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-01-10T10:00:00.000Z', c1.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-02-10T10:00:00.000Z', c2.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-03-10T10:00:00.000Z', c3.id);
+
+      const list = repo.getAllTrainings(undefined, 'Teologia');
+      expect(list.length).toBe(3);
+      // O mais antigo deve vir primeiro, e o mais recente por último
+      expect(list[0].id).toBe(c1.id);
+      expect(list[0].title).toBe('Curso Antigo (Janeiro)');
+      expect(list[1].id).toBe(c2.id);
+      expect(list[1].title).toBe('Curso Intermediário (Fevereiro)');
+      expect(list[2].id).toBe(c3.id);
+      expect(list[2].title).toBe('Curso Recente (Março)');
+    });
+
+    it('deve colocar o curso com "Destaque na Categoria" em primeiro lugar na categoria, mesmo sendo o mais recente', () => {
+      const cOld = repo.createTraining({
+        title: 'Liderança Básica',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: false,
+      });
+
+      const cMid = repo.createTraining({
+        title: 'Liderança Intermediária',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: false,
+      });
+
+      const cNew = repo.createTraining({
+        title: 'Liderança de Alta Performance (Destaque)',
+        category: 'Liderança Avançada',
+        isCategoryFeatured: true,
+      });
+
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-01-01T00:00:00.000Z', cOld.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-02-01T00:00:00.000Z', cMid.id);
+      (repo as any).db
+        .prepare('UPDATE trainings SET created_at = ? WHERE id = ?')
+        .run('2026-03-01T00:00:00.000Z', cNew.id);
+
+      const list = repo.getAllTrainings(undefined, 'Liderança Avançada');
+      expect(list.length).toBe(3);
+      // O curso destacado na categoria DEVE vir em primeiro lugar
+      expect(list[0].id).toBe(cNew.id);
+      expect(list[0].isCategoryFeatured).toBe(true);
+
+      // Os demais seguem a ordem cronológica do mais antigo para o mais recente
+      expect(list[1].id).toBe(cOld.id);
+      expect(list[1].isCategoryFeatured).toBe(false);
+      expect(list[2].id).toBe(cMid.id);
+      expect(list[2].isCategoryFeatured).toBe(false);
+
+      // Se remover o destaque na categoria, volta para a ordem cronológica estrita
+      repo.updateTraining(cNew.id, { isCategoryFeatured: false });
+      const listAfter = repo.getAllTrainings(undefined, 'Liderança Avançada');
+      expect(listAfter[0].id).toBe(cOld.id);
+      expect(listAfter[1].id).toBe(cMid.id);
+      expect(listAfter[2].id).toBe(cNew.id);
+    });
+
+    it('deve persistir e permitir alternar Destaque na Página Inicial e Destaque na Categoria via API', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/api/trainings',
+        createTrainingRouter(repo, {
+          requireAuth: (_req, _res, next) => next(),
+          requireAdmin: (_req, _res, next) => next(),
+        })
+      );
+
+      const server = app.listen(0);
+      const port = (server.address() as any).port;
+
+      try {
+        // Criar curso com ambos destaques
+        const resCreate = await fetch(`http://127.0.0.1:${port}/api/trainings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Curso de Missões Urbanas',
+            category: 'Missões',
+            isFeatured: true,
+            isCategoryFeatured: true,
+          }),
+        });
+
+        expect(resCreate.status).toBe(201);
+        const dataCreate = await resCreate.json();
+        expect(dataCreate.training.isFeatured).toBe(true);
+        expect(dataCreate.training.isCategoryFeatured).toBe(true);
+
+        const trainingId = dataCreate.training.id;
+
+        // Alterar via PUT desativando apenas o destaque de categoria
+        const resUpdate = await fetch(`http://127.0.0.1:${port}/api/trainings/${trainingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isCategoryFeatured: false,
+          }),
+        });
+
+        expect(resUpdate.status).toBe(200);
+        const dataUpdate = await resUpdate.json();
+        expect(dataUpdate.training.isFeatured).toBe(true); // manteve
+        expect(dataUpdate.training.isCategoryFeatured).toBe(false); // atualizou
+
+        // Consultar diretamente pelo repositório
+        const fetched = repo.getTrainingById(trainingId);
+        expect(fetched?.isFeatured).toBe(true);
+        expect(fetched?.isCategoryFeatured).toBe(false);
+      } finally {
+        server.close();
+      }
     });
   });
 });
